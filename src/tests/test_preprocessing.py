@@ -101,14 +101,18 @@ class TestLambdaHandler:
     @patch('lambda_function.s3_client')
     def test_lambda_handler_success(self, mock_s3_client):
         """Test successful lambda execution"""
-        # Mock S3 response
+        # Mock S3 response - using real dataset format
         mock_review_data = {
             'asin': 'B001234567',
             'reviewerID': 'A1234567890',
-            'overall': 5,
+            'reviewerName': 'Test Customer',
+            'overall': 5.0,
             'summary': 'Great product',
             'reviewText': 'This is an excellent product that I highly recommend.',
-            'unixReviewTime': 1609459200
+            'unixReviewTime': 1609459200,
+            'reviewTime': '01 1, 2021',
+            'category': 'Patio_Lawn_and_Garden',
+            'helpful': [5, 5]
         }
         
         mock_s3_client.get_object.return_value = {
@@ -211,6 +215,48 @@ class TestLambdaHandler:
         body = json.loads(result['body'])
         assert body['error'] == 'Failed to preprocess review'
         assert 'S3 Error' in body['details']
+    
+    @patch('lambda_function.s3_client')
+    def test_lambda_handler_jsonl_format(self, mock_s3_client):
+        """Test lambda execution with JSONL format (like reviews_devset.json)"""
+        # Mock S3 response with JSONL format
+        mock_review_data = {
+            'asin': 'B001234567',
+            'reviewerID': 'A1234567890',
+            'reviewerName': 'Test Customer',
+            'overall': 5.0,
+            'summary': 'Great product',
+            'reviewText': 'This is an excellent product.',
+            'unixReviewTime': 1609459200,
+            'category': 'Patio_Lawn_and_Garden'
+        }
+        
+        # JSONL format - single line
+        jsonl_content = json.dumps(mock_review_data)
+        
+        mock_s3_client.get_object.return_value = {
+            'Body': Mock(read=Mock(return_value=jsonl_content.encode('utf-8')))
+        }
+        mock_s3_client.put_object.return_value = {}
+        
+        event = {
+            'Records': [
+                {
+                    's3': {
+                        'bucket': {'name': 'test-bucket'},
+                        'object': {'key': 'test-review.json'}
+                    }
+                }
+            ]
+        }
+        
+        with patch.dict(os.environ, {'PROCESSED_BUCKET': 'test-processed-bucket'}):
+            result = lambda_handler(event, {})
+        
+        # Should succeed
+        assert result['statusCode'] == 200
+        body = json.loads(result['body'])
+        assert body['review_id'] == 'B001234567'
     
     @patch('lambda_function.s3_client')
     def test_lambda_handler_invalid_json(self, mock_s3_client):

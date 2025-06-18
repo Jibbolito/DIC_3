@@ -1,0 +1,26 @@
+{
+  "total_reviews": 78829,
+  "positive_reviews": 62196,
+  "neutral_reviews": 6644,
+  "negative_reviews": 9989,
+  "failed_profanity_check": 6370,
+  "banned_users_count": 4,
+  "banned_users": [
+    {
+      "user_id": "A2F6N60Z96CAJI",
+      "unpolite_count": 5
+    },
+    {
+      "user_id": "A1K1JW1C5CUSUZ",
+      "unpolite_count": 4
+    },
+    {
+      "user_id": "A2HVL790PBWYTU",
+      "unpolite_count": 4
+    },
+    {
+      "user_id": "A2EDZH51XHFA9B",
+      "unpolite_count": 4
+    }
+  ]
+}

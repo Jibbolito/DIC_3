@@ -28,6 +28,9 @@ DIC2025_Assignment3/
 │       ├── test_profanity_check.py
 │       └── test_integration.py
 ├── data/
+│   └── reviews_devset.json        # Real dataset (78,829 reviews)
+├── analyze_devset_simple.py       # Analysis script for results
+├── process_devset.py              # Alternative processing script
 └── README.md
 ```
 
@@ -109,34 +112,34 @@ After setup, verify everything is working:
 # Quick verification
 python verify_setup.py
 
-# Test with sample data
-chmod +x test_sample_data.sh
-./test_sample_data.sh
+# Test with real dataset
+python analyze_devset_simple.py
 ```
 
-## Testing
+## Testing & Analysis
 
-### Run All Tests
+### Run Unit/Integration Tests
 ```bash
+# Run all tests
 python run_tests.py
+
+# Test specific components
+python run_tests.py preprocessing    # Preprocessing function only
+python run_tests.py profanity_check  # Profanity check function only  
+python run_tests.py integration      # S3 integration only
 ```
 
-### Run Specific Tests
+### Run Dataset Analysis
 ```bash
-# Test preprocessing function only
-python run_tests.py preprocessing
-
-# Test profanity check function only
-python run_tests.py profanity_check
-
-# Test S3 integration only
-python run_tests.py integration
+# Analyze the full dataset (78,829 reviews)
+python analyze_devset_simple.py
 ```
 
-### Manual Testing with Sample Data
-Sample review files are provided in the `data/` directory:
-- `sample_review.json` - Clean review for testing
-- `sample_profane_review.json` - Review with profanity for testing
+**Analysis Results Generated:**
+- Sentiment analysis: 78.9% positive, 8.4% neutral, 12.7% negative reviews
+- Profanity detection: 8.1% of reviews failed profanity check
+- User bans: 4 users banned for >3 unpolite reviews
+- Results automatically saved to `assignment_results.json`
 
 ## Environment Variables
 

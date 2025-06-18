@@ -91,14 +91,29 @@ def lambda_handler(event, context):
         
         # Download the review file from S3
         response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
-        review_data = json.loads(response['Body'].read().decode('utf-8'))
+        file_content = response['Body'].read().decode('utf-8')
+        
+        # Handle both single JSON and JSONL formats
+        try:
+            # Try parsing as single JSON first
+            review_data = json.loads(file_content)
+        except json.JSONDecodeError:
+            # If that fails, try parsing as JSONL (first line only for single review processing)
+            lines = file_content.strip().split('\n')
+            if lines:
+                review_data = json.loads(lines[0])
+            else:
+                raise ValueError("Empty file or invalid format")
         
         # Process each field that needs analysis
         processed_review = {
             'review_id': review_data.get('asin', 'unknown'),
             'reviewer_id': review_data.get('reviewerID', 'unknown'),
+            'reviewer_name': review_data.get('reviewerName', ''),
             'overall_rating': review_data.get('overall', 0),
             'timestamp': review_data.get('unixReviewTime', 0),
+            'category': review_data.get('category', ''),
+            'helpful': review_data.get('helpful', [0, 0]),
             'original_summary': review_data.get('summary', ''),
             'original_reviewText': review_data.get('reviewText', ''),
             'original_overall': str(review_data.get('overall', '')),
