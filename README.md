@@ -21,6 +21,9 @@ DIC2025_Assignment3/
 │   │   │   ├── lambda_function.py
 │   │   │   └── requirements.txt
 │   │   └── profanity_check/
+│   │   |   ├── lambda_function.py
+│   │   |   └── requirements.txt
+│   │   └── sentiment_analysis/
 │   │       ├── lambda_function.py
 │   │       └── requirements.txt
 │   └── tests/

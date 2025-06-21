@@ -114,6 +114,9 @@ fi
 echo "   Installing Python dependencies..."
 pip install -r requirements.txt
 
+echo "   Installing regex additionally..."
+pip install -U regex
+
 echo "   Dependencies installed successfully"
 
 # Test LocalStack installation

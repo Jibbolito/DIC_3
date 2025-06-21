@@ -1,2 +1,3 @@
-boto3==1.26.137
-profanityfilter==2.0.7
+boto3
+profanityfilter
+regex

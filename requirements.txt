@@ -1,19 +1,23 @@
 # AWS dependencies
-boto3==1.26.137
+boto3
 
 # NLP libraries for preprocessing
-nltk==3.8.1
+nltk
 
 # Profanity detection (as recommended in tips & tricks)
-profanityfilter==2.0.7
+profanityfilter
 
 # LocalStack (as required in environment setup)
-localstack==2.1.0
+localstack
+localstack-client
+awscli
+awscli-local
 
 # Testing
-pytest==7.4.0
-moto==4.1.14
+pytest
+moto
 
 # Utilities
-requests==2.31.0
-packaging==23.1
+requests
+packaging
+regex

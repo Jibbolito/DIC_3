@@ -12,6 +12,10 @@ logger.setLevel(logging.INFO)
 
 # Initialize AWS clients
 s3_client = boto3.client('s3')
+# Initialize DynamoDB client, use endpoint_url for LocalStack
+dynamodb = boto3.resource('dynamodb', endpoint_url=os.environ.get('AWS_ENDPOINT_URL'))
+ssm_client = boto3.client('ssm', endpoint_url=os.environ.get('AWS_ENDPOINT_URL'))
+
 
 # Initialize profanity filter
 pf = ProfanityFilter()
@@ -27,6 +31,31 @@ CUSTOM_PROFANITY_WORDS = {
 for word in CUSTOM_PROFANITY_WORDS:
     pf.add_word(word)
 
+def get_parameter(name):
+    """Retrieves a parameter from AWS SSM Parameter Store."""
+    try:
+        response = ssm_client.get_parameter(Name=name, WithDecryption=True)
+        return response['Parameter']['Value']
+    except Exception as e:
+        logger.error(f"Error retrieving SSM parameter {name}: {e}")
+        raise
+
+# Retrieve bucket and table names from SSM Parameter Store at cold start
+try:
+    FLAGGED_BUCKET = get_parameter('/my-app/s3/flagged_bucket_name')
+    CLEAN_BUCKET = get_parameter('/my-app/s3/clean_bucket_name')
+    CUSTOMER_PROFANITY_TABLE_NAME = get_parameter('/my-app/dynamodb/customer_profanity_table_name')
+    BAN_THRESHOLD = int(get_parameter('/my-app/ban_threshold')) # Get ban threshold from SSM
+except Exception as e:
+    logger.error(f"Failed to load SSM parameters at initialization: {e}")
+    # Fallback for local testing if SSM not setup
+    FLAGGED_BUCKET = 'flagged-reviews-bucket'
+    CLEAN_BUCKET = 'clean-reviews-bucket'
+    CUSTOMER_PROFANITY_TABLE_NAME = 'CustomerProfanityCounts'
+    BAN_THRESHOLD = 3 # Default ban threshold
+
+# Get the DynamoDB table instance
+customer_profanity_table = dynamodb.Table(CUSTOMER_PROFANITY_TABLE_NAME)
 
 def check_profanity_in_text(text: str) -> Dict:
     """
@@ -154,12 +183,49 @@ def lambda_handler(event, context):
             }
         })
         
+        # --- Profanity Count and Banning Logic ---
+        reviewer_id = review_data.get('reviewer_id', 'unknown')
+        is_banned = False
+
+        if contains_profanity:
+            try:
+                # Increment profanity count in DynamoDB
+                response = customer_profanity_table.update_item(
+                    Key={'reviewer_id': reviewer_id},
+                    UpdateExpression='SET profanity_count = if_not_exists(profanity_count, :start) + :inc',
+                    ExpressionAttributeValues={
+                        ':start': 0,
+                        ':inc': 1
+                    },
+                    ReturnValues='UPDATED_NEW'
+                )
+                current_profanity_count = response['Attributes'].get('profanity_count', 0)
+                logger.info(f"Reviewer '{reviewer_id}' profanity count updated to: {current_profanity_count}")
+
+                # Check for banning
+                if current_profanity_count > BAN_THRESHOLD:
+                    customer_profanity_table.update_item(
+                        Key={'reviewer_id': reviewer_id},
+                        UpdateExpression='SET is_banned = :val',
+                        ExpressionAttributeValues={
+                            ':val': True
+                        }
+                    )
+                    is_banned = True
+                    logger.warning(f"Reviewer '{reviewer_id}' has been banned due to excessive profanity ({current_profanity_count} reviews).")
+            except Exception as ddb_e:
+                logger.error(f"Error updating DynamoDB for reviewer '{reviewer_id}': {str(ddb_e)}")
+                # Continue processing to S3 even if DynamoDB update fails
+        
+        review_data['profanity_analysis']['reviewer_banned'] = is_banned
+        review_data['profanity_analysis']['current_reviewer_profanity_count'] = current_profanity_count if contains_profanity else 0
+
         # Determine next bucket based on profanity status
         if contains_profanity:
-            next_bucket = os.environ.get('FLAGGED_BUCKET', 'flagged-reviews-bucket')
+            next_bucket = FLAGGED_BUCKET
             next_key = f"flagged/{review_data.get('review_id', 'unknown')}.json"
         else:
-            next_bucket = os.environ.get('CLEAN_BUCKET', 'clean-reviews-bucket')
+            next_bucket = CLEAN_BUCKET
             next_key = f"clean/{review_data.get('review_id', 'unknown')}.json"
         
         # Save analyzed review to appropriate S3 bucket
@@ -181,6 +247,7 @@ def lambda_handler(event, context):
                 'contains_profanity': contains_profanity,
                 'profanity_count': total_profanity_count,
                 'severity_score': total_severity_score,
+                'reviewer_banned': is_banned,
                 'output_location': f"s3://{next_bucket}/{next_key}"
             })
         }
