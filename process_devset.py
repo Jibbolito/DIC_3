@@ -16,7 +16,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'src/lambda_functions/pr
 def load_reviews(file_path):
     """Load reviews from JSONL file"""
     reviews = []
-    print(f"📖 Loading reviews from {file_path}...")
+    print("  Loading reviews from {}...".format(file_path))
     
     with open(file_path, 'r', encoding='utf-8') as f:
         for line_num, line in enumerate(f, 1):
@@ -24,15 +24,15 @@ def load_reviews(file_path):
                 review = json.loads(line.strip())
                 reviews.append(review)
             except json.JSONDecodeError as e:
-                print(f"⚠️  Error parsing line {line_num}: {e}")
+                print("  Error parsing line {}: {}".format(line_num, e))
                 continue
     
-    print(f"✅ Loaded {len(reviews)} reviews")
+    print("  Loaded {} reviews".format(len(reviews)))
     return reviews
 
 def process_reviews_with_functions(reviews):
     """Process reviews using our Lambda function logic"""
-    print("🔄 Processing reviews with our Lambda functions...")
+    print("  Processing reviews with our Lambda functions...")
     
     # Import our function logic
     from lambda_function import preprocess_text, check_profanity_in_text
@@ -106,17 +106,17 @@ def process_reviews_with_functions(reviews):
                 
             # Progress indicator
             if (i + 1) % 100 == 0:
-                print(f"   Processed {i + 1}/{len(reviews)} reviews...")
+                print("   Processed {}/{} reviews...".format(i + 1, len(reviews)))
                 
         except Exception as e:
             results['processing_errors'] += 1
-            print(f"⚠️  Error processing review {i}: {e}")
+            print("  Error processing review {}: {}".format(i, e))
     
     return results
 
 def analyze_banned_users(profane_reviews):
     """Analyze which users should be banned (>3 unpolite reviews)"""
-    print("👤 Analyzing user ban status...")
+    print("  Analyzing user ban status...")
     
     user_profanity_counts = Counter()
     
@@ -136,32 +136,32 @@ def analyze_banned_users(profane_reviews):
 def generate_report(results):
     """Generate the required assignment report"""
     print("\n" + "="*60)
-    print("📊 ASSIGNMENT 3 RESULTS REPORT")
+    print("  ASSIGNMENT 3 RESULTS REPORT")
     print("="*60)
     
-    print(f"\n📈 SENTIMENT ANALYSIS RESULTS:")
-    print(f"   Total reviews processed: {results['total_reviews']}")
-    print(f"   ✅ Positive reviews: {results['positive_reviews']} ({results['positive_reviews']/results['total_reviews']*100:.1f}%)")
-    print(f"   ➖ Neutral reviews: {results['neutral_reviews']} ({results['neutral_reviews']/results['total_reviews']*100:.1f}%)")
-    print(f"   ❌ Negative reviews: {results['negative_reviews']} ({results['negative_reviews']/results['total_reviews']*100:.1f}%)")
+    print("\n  SENTIMENT ANALYSIS RESULTS:")
+    print("   Total reviews processed: {}".format(results['total_reviews']))
+    print("   Positive reviews: {} ({:.1f}%)".format(results['positive_reviews'], results['positive_reviews']/results['total_reviews']*100))
+    print("   Neutral reviews: {} ({:.1f}%)".format(results['neutral_reviews'], results['neutral_reviews']/results['total_reviews']*100))
+    print("   Negative reviews: {} ({:.1f}%)".format(results['negative_reviews'], results['negative_reviews']/results['total_reviews']*100))
     
-    print(f"\n🚫 PROFANITY CHECK RESULTS:")
-    print(f"   Clean reviews: {results['clean_reviews']} ({results['clean_reviews']/results['total_reviews']*100:.1f}%)")
-    print(f"   Reviews that failed profanity check: {results['profane_reviews']} ({results['profane_reviews']/results['total_reviews']*100:.1f}%)")
+    print("\n  PROFANITY CHECK RESULTS:")
+    print("   Clean reviews: {} ({:.1f}%)".format(results['clean_reviews'], results['clean_reviews']/results['total_reviews']*100))
+    print("   Reviews that failed profanity check: {} ({:.1f}%)".format(results['profane_reviews'], results['profane_reviews']/results['total_reviews']*100))
     
     # Analyze banned users
     banned_users, user_counts = analyze_banned_users(results['profane_review_details'])
     
-    print(f"\n👤 USER BAN ANALYSIS:")
-    print(f"   Users with unpolite reviews: {len(user_counts)}")
-    print(f"   Users resulting in a ban (>3 unpolite): {len(banned_users)}")
+    print("\n  USER BAN ANALYSIS:")
+    print("   Users with unpolite reviews: {}".format(len(user_counts)))
+    print("   Users resulting in a ban (>3 unpolite): {}".format(len(banned_users)))
     
     if banned_users:
-        print(f"\n🚫 BANNED USERS:")
+        print("\n  BANNED USERS:")
         for user in banned_users:
-            print(f"   - {user['reviewer_id']}: {user['unpolite_reviews']} unpolite reviews")
+            print("   - {}: {} unpolite reviews".format(user['reviewer_id'], user['unpolite_reviews']))
     else:
-        print(f"   No users meet the ban criteria (>3 unpolite reviews)")
+        print("   No users meet the ban criteria (>3 unpolite reviews)")
     
     # Most common profanity words
     if results['profane_review_details']:
@@ -170,12 +170,12 @@ def generate_report(results):
             all_profanity_words.extend(review['profanity_words'])
         
         profanity_counter = Counter(all_profanity_words)
-        print(f"\n🗣️  MOST COMMON PROFANITY WORDS:")
+        print("\n  MOST COMMON PROFANITY WORDS:")
         for word, count in profanity_counter.most_common(10):
-            print(f"   - '{word}': {count} occurrences")
+            print("   - '{}': {} occurrences".format(word, count))
     
     if results['processing_errors'] > 0:
-        print(f"\n⚠️  PROCESSING ERRORS: {results['processing_errors']}")
+        print("\n  PROCESSING ERRORS: {}".format(results['processing_errors']))
     
     print("\n" + "="*60)
     
@@ -190,14 +190,14 @@ def generate_report(results):
 
 def main():
     """Main processing function"""
-    print("🚀 Processing reviews_devset.json for Assignment 3")
+    print("  Processing reviews_devset.json for Assignment 3")
     print("="*60)
     
     # File path
     devset_path = 'data/reviews_devset.json'
     
     if not os.path.exists(devset_path):
-        print(f"❌ File not found: {devset_path}")
+        print("  File not found: {}".format(devset_path))
         print("   Please ensure reviews_devset.json is in the data/ directory")
         return 1
     
@@ -206,7 +206,7 @@ def main():
         reviews = load_reviews(devset_path)
         
         if not reviews:
-            print("❌ No reviews loaded")
+            print("  No reviews loaded")
             return 1
         
         # Process reviews
@@ -238,12 +238,12 @@ def main():
                 'sample_profane_reviews': results['profane_review_details'][:5]  # First 5 for review
             }, f, indent=2)
         
-        print(f"\n💾 Detailed results saved to: {output_file}")
+        print("\n  Detailed results saved to: {}".format(output_file))
         
         return 0
         
     except Exception as e:
-        print(f"❌ Error processing reviews: {e}")
+        print("  Error processing reviews: {}".format(e))
         return 1
 
 if __name__ == '__main__':
