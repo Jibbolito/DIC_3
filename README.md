@@ -32,8 +32,16 @@ DIC2025_Assignment3/
 │       └── test_integration.py
 ├── data/
 │   └── reviews_devset.json        # Real dataset (78,829 reviews)
+├── deployments/                   # Lambda deployment packages
+│   ├── preprocessing_deployment.zip
+│   ├── profanity_check_deployment.zip
+│   └── sentiment_analysis_deployment.zip
 ├── analyze_devset_simple.py       # Analysis script for results
-├── process_devset.py              # Alternative processing script
+├── package_lambdas.py             # Lambda packaging script
+├── setup_environment.sh           # Environment setup automation
+├── setup_aws_lambdas.sh           # Deploy Lambda functions to LocalStack
+├── setup_eventbridge.sh           # Configure EventBridge triggers
+├── run_on_reviews_devset.sh       # Test pipeline with real dataset
 └── README.md
 ```
 
@@ -57,54 +65,177 @@ DIC2025_Assignment3/
 
 ## Requirements
 
-Following the official Environment Setup guide:
-
 ### Prerequisites
-- **Python 3.11** (3.9+ compatible)
-- **Docker** (for LocalStack)
-- **Utilities**: jq, curl, zip/tar
+- **Python 3.10+** (3.9+ compatible)
+- **Docker Desktop** (for LocalStack)
+- **Git** (for bash scripts on Windows)
 
-### Environment Setup
+### Platform-Specific Setup
 
-**Option 1: Automated Setup (Recommended)**
+## Windows Setup
+
+### Prerequisites Installation
+1. **Install Python 3.10+**: Download from [python.org](https://www.python.org/downloads/)
+2. **Install Docker Desktop**: Download from [docker.com](https://www.docker.com/products/docker-desktop/)
+3. **Install Git for Windows**: Download from [git-scm.com](https://git-scm.com/downloads) (includes Git Bash)
+
+### Environment Setup (Windows)
+```powershell
+# 1. Navigate to project directory
+cd C:\path\to\DIC2025_Assignment3
+
+# 2. Create and activate virtual environment
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+
+# 3. Install dependencies
+pip install -r requirements.txt
+pip install requests  # Additional dependency for testing
+
+# 4. Start Docker Desktop (ensure it's running)
+docker --version
+
+# 5. Test the analysis (works without AWS CLI)
+python analyze_devset_simple.py
+
+# 6. For full AWS LocalStack testing (requires Git Bash):
+# Option A: Use Git Bash for shell scripts
+& "C:\Program Files\Git\bin\bash.exe" ./setup_environment.sh
+python package_lambdas.py
+& "C:\Program Files\Git\bin\bash.exe" ./setup_aws_lambdas.sh
+
+# Option B: Manual LocalStack testing
+docker run --rm -d --name localstack -p 4566:4566 -e SERVICES=s3,lambda,events,iam localstack/localstack
+# Then test S3 uploads:
+Invoke-WebRequest -Uri "http://localhost:4566/test-bucket" -Method PUT
+```
+
+## macOS Setup
+
+### Prerequisites Installation
 ```bash
-# Run the complete environment setup
+# Install Homebrew (if not installed)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install Python 3.10+
+brew install python@3.10
+
+# Install Docker Desktop
+brew install --cask docker
+
+# Install additional utilities
+brew install jq curl
+```
+
+### Environment Setup (macOS)
+```bash
+# 1. Navigate to project directory
+cd /path/to/DIC2025_Assignment3
+
+# 2. Create and activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+pip install requests
+
+# 4. Start Docker Desktop and verify
+docker --version
+
+# 5. Test the analysis (works without AWS CLI)
+python analyze_devset_simple.py
+
+# 6. Full AWS LocalStack automated setup
 chmod +x setup_environment.sh
 ./setup_environment.sh
+python package_lambdas.py
+chmod +x setup_aws_lambdas.sh
+./setup_aws_lambdas.sh
+chmod +x setup_eventbridge.sh
+./setup_eventbridge.sh
 ```
 
-**Option 2: Manual Setup**
+## Linux Setup
 
-1. **Python 3.11 with pyenv** (recommended):
+### Prerequisites Installation
 ```bash
-# Install pyenv first (see: https://github.com/pyenv/pyenv)
-pyenv install 3.11.6
-pyenv local 3.11.6
-python --version  # Should show Python 3.11.6
+# Ubuntu/Debian
+sudo apt update
+sudo apt install python3.10 python3.10-venv python3-pip docker.io jq curl
+
+# CentOS/RHEL
+sudo yum install python3 python3-pip docker jq curl
+
+# Start Docker
+sudo systemctl start docker
+sudo usermod -aG docker $USER  # Add user to docker group
 ```
 
-2. **Virtual Environment**:
+### Environment Setup (Linux)
 ```bash
+# 1. Navigate to project directory
+cd /path/to/DIC2025_Assignment3
+
+# 2. Create and activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+pip install requests
+
+# 4. Verify Docker
+docker --version
+
+# 5. Test the analysis
+python analyze_devset_simple.py
+
+# 6. Full AWS LocalStack automated setup
+chmod +x setup_environment.sh setup_aws_lambdas.sh setup_eventbridge.sh
+./setup_environment.sh
+python package_lambdas.py
+./setup_aws_lambdas.sh
+./setup_eventbridge.sh
+```
+
+## Quick Start Guide
+
+### Minimum Working Setup (All Platforms)
+```bash
+# 1. Clone and navigate to project
 cd DIC2025_Assignment3
+
+# 2. Create virtual environment
 python -m venv .venv
 
-# Activate (choose your platform):
-# Linux & macOS:
-source .venv/bin/activate
-# Windows cmd:
-.venv\Scripts\activate.bat
-# Windows PowerShell:  
+# 3. Activate virtual environment
+# Windows PowerShell:
 .venv\Scripts\Activate.ps1
-```
+# Linux/macOS:
+source .venv/bin/activate
 
-3. **Install Dependencies**:
-```bash
+# 4. Install dependencies
 pip install -r requirements.txt
+pip install requests
+
+# 5. Test core functionality (no AWS required)
+python analyze_devset_simple.py
 ```
 
-4. **Start LocalStack**:
+### Full AWS LocalStack Testing
+**Prerequisites**: Docker Desktop running
+
+**Windows (with Git Bash)**:
+```powershell
+docker run --rm -d --name localstack -p 4566:4566 -e SERVICES=s3,lambda,events,iam localstack/localstack
+& "C:\Program Files\Git\bin\bash.exe" ./setup_aws_lambdas.sh
+```
+
+**macOS/Linux**:
 ```bash
-LOCALSTACK_ACTIVATE_PRO=0 LOCALSTACK_DEBUG=1 localstack start
+docker run --rm -d --name localstack -p 4566:4566 -e SERVICES=s3,lambda,events,iam localstack/localstack
+chmod +x setup_aws_lambdas.sh && ./setup_aws_lambdas.sh
 ```
 
 ## Environment Verification
@@ -132,9 +263,16 @@ python run_tests.py profanity_check  # Profanity check function only
 python run_tests.py integration      # S3 integration only
 ```
 
-### Run Dataset Analysis
+### Run AWS LocalStack Pipeline Test
 ```bash
-# Analyze the full dataset (78,829 reviews)
+# Test complete pipeline with real dataset
+chmod +x run_on_reviews_devset.sh
+./run_on_reviews_devset.sh
+```
+
+### Run Dataset Analysis (Alternative)
+```bash
+# Analyze the full dataset (78,829 reviews) without AWS
 python analyze_devset_simple.py
 ```
 
@@ -164,6 +302,83 @@ chmod +x setup_eventbridge.sh
 ```
 
 This sets up EventBridge to trigger multiple Lambda functions from a single S3 event, following the recommended pattern from the tips & tricks document.
+
+## AWS LocalStack Deployment
+
+The project now supports full AWS LocalStack deployment for testing the complete serverless pipeline:
+
+### Quick Start
+```bash
+# Ensure Docker is running, then:
+./setup_environment.sh
+python package_lambdas.py  
+./setup_aws_lambdas.sh
+./run_on_reviews_devset.sh
+```
+
+### Deployed Components
+- **Lambda Functions**: preprocessing, profanity_check, sentiment_analysis
+- **S3 Buckets**: raw-reviews, processed-reviews, clean-reviews, flagged-reviews
+- **IAM Roles**: lambda-role with proper permissions
+- **LocalStack Services**: S3, Lambda, IAM, Events
+
+### Monitoring
+```bash
+# Check LocalStack health
+curl http://localhost:4566/_localstack/health
+
+# View LocalStack logs  
+localstack logs -f
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**Windows PowerShell Script Execution**:
+```powershell
+# If script execution is disabled:
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+**Docker Permission Issues (Linux)**:
+```bash
+# Add user to docker group
+sudo usermod -aG docker $USER
+# Restart terminal or run:
+newgrp docker
+```
+
+**AWS CLI Not Found in Git Bash**:
+- Use the Python-based approach instead
+- Or install AWS CLI v2 for Windows from AWS website
+
+**File Path Issues**:
+- Ensure you're in the correct project directory
+- Check that `data/reviews_devset.json` exists
+- Use absolute paths if relative paths fail
+
+**LocalStack Connection Issues**:
+```bash
+# Check if LocalStack is running
+docker ps | grep localstack
+
+# Restart LocalStack
+docker stop localstack
+docker run --rm -d --name localstack -p 4566:4566 -e SERVICES=s3,lambda,events,iam localstack/localstack
+```
+
+**Python Module Not Found**:
+```bash
+# Ensure virtual environment is activated
+# Windows:
+.venv\Scripts\Activate.ps1
+# Linux/macOS:  
+source .venv/bin/activate
+
+# Install missing modules
+pip install requests boto3 nltk profanityfilter
+```
 
 ## Tips & Tricks Compliance
 

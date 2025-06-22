@@ -38,7 +38,7 @@ def simple_profanity_check(text):
 
 def process_reviews():
     """Process the reviews_devset.json file"""
-    print("  Processing reviews_devset.json for Assignment 3")
+    print("Processing reviews_devset.json for Assignment 3")
     print("=" * 60)
     
     results = {
@@ -53,7 +53,7 @@ def process_reviews():
     }
     
     try:
-        with open('/mnt/c/Users/vikho/PycharmProjects/DIC2025_Assignment3/data/reviews_devset.json', 'r', encoding='utf-8') as f:
+        with open('data/reviews_devset.json', 'r', encoding='utf-8') as f:
             for line_num, line in enumerate(f, 1):
                 try:
                     review = json.loads(line.strip())
@@ -95,25 +95,25 @@ def process_reviews():
                         print(f"   Processed {line_num} reviews...")
                         
                 except json.JSONDecodeError:
-                    print(f"   Skipping invalid JSON on line {line_num}")
+                    print(f"   WARNING: Skipping invalid JSON on line {line_num}")
                     continue
     
     except FileNotFoundError:
-        print("  File not found: data/reviews_devset.json")
+        print("ERROR: File not found: data/reviews_devset.json")
         return
     
     # Generate results
     print("\n" + "=" * 60)
-    print("  ASSIGNMENT 3 RESULTS REPORT")
+    print("ASSIGNMENT 3 RESULTS REPORT")
     print("=" * 60)
     
-    print(f"\n  SENTIMENT ANALYSIS RESULTS:")
+    print(f"\nSENTIMENT ANALYSIS RESULTS:")
     print(f"   Total reviews processed: {results['total_reviews']}")
     print(f"   Positive reviews: {results['positive_reviews']} ({results['positive_reviews']/results['total_reviews']*100:.1f}%)")
     print(f"   Neutral reviews: {results['neutral_reviews']} ({results['neutral_reviews']/results['total_reviews']*100:.1f}%)")
     print(f"   Negative reviews: {results['negative_reviews']} ({results['negative_reviews']/results['total_reviews']*100:.1f}%)")
     
-    print(f"\n  PROFANITY CHECK RESULTS:")
+    print(f"\nPROFANITY CHECK RESULTS:")
     print(f"   Clean reviews: {results['clean_reviews']} ({results['clean_reviews']/results['total_reviews']*100:.1f}%)")
     print(f"   Reviews that failed profanity check: {results['profane_reviews']} ({results['profane_reviews']/results['total_reviews']*100:.1f}%)")
     
@@ -123,12 +123,12 @@ def process_reviews():
         if count > 3:
             banned_users.append((user_id, count))
     
-    print(f"\n  USER BAN ANALYSIS:")
+    print(f"\nUSER BAN ANALYSIS:")
     print(f"   Users with unpolite reviews: {len(results['user_profanity_counts'])}")
     print(f"   Users resulting in a ban (>3 unpolite): {len(banned_users)}")
     
     if banned_users:
-        print(f"\n  BANNED USERS:")
+        print(f"\nBANNED USERS:")
         for user_id, count in banned_users:
             print(f"   - {user_id}: {count} unpolite reviews")
     else:
@@ -137,12 +137,12 @@ def process_reviews():
     # Most common profanity
     if results['all_profanity_words']:
         profanity_counts = Counter(results['all_profanity_words'])
-        print(f"\n  MOST COMMON PROFANITY WORDS:")
+        print(f"\nMOST COMMON PROFANITY WORDS:")
         for word, count in profanity_counts.most_common(10):
             print(f"   - '{word}': {count} occurrences")
     
     print("\n" + "=" * 60)
-    print("  Analysis complete!")
+    print("Analysis complete!")
     
     # Save summary
     summary = {
@@ -155,10 +155,10 @@ def process_reviews():
         'banned_users': [{'user_id': uid, 'unpolite_count': count} for uid, count in banned_users]
     }
     
-    with open('/mnt/c/Users/vikho/PycharmProjects/DIC2025_Assignment3/assignment_results.json', 'w') as f:
+    with open('assignment_results.json', 'w') as f:
         json.dump(summary, f, indent=2)
     
-    print(f"  Results saved to: assignment_results.json")
+    print(f"Results saved to: assignment_results.json")
 
 if __name__ == '__main__':
     process_reviews()
