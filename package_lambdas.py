@@ -10,7 +10,7 @@ import subprocess
 import sys
 
 # Constants
-PYTHON_VERSION = '3.11'  # Adjust as needed for your Lambda runtime
+PYTHON_VERSION = '3.9'  # Adjust as needed for your Lambda runtime
 
 def package_lambda(function_name, function_dir):
     """Package a Lambda function with its dependencies"""
@@ -35,11 +35,14 @@ def package_lambda(function_name, function_dir):
         if os.path.exists(requirements_file):
             print(f"     Installing dependencies for {function_name} (forcing source build for compatibility)...")
             subprocess.run([
-    'docker', 'run', '--rm',
-    '-v', f'{temp_function_path}:/var/task',
-    f'public.ecr.aws/lambda/python:{PYTHON_VERSION}',
-    'pip', 'install', '-r', 'requirements.txt', '-t', '.'
-], cwd=temp_function_path, check=True)
+                sys.executable, '-m', 'pip', 'install',
+                '--platform', 'linux_x86_64',  # Adjust as needed
+                '-r', requirements_file,
+                '-t', temp_function_path,
+                '--quiet',
+                '--no-deps',
+                # '--only-binary=:all:',
+            ], check=True)
 
             print(f"     Dependencies for {function_name} installed.")
         else:
