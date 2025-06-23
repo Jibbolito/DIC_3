@@ -10,7 +10,7 @@ import subprocess
 import sys
 
 # Constants
-PYTHON_VERSION = '3.9'  # Adjust as needed for your Lambda runtime
+PYTHON_VERSION = '3.10'  # Adjust as needed for your Lambda runtime
 
 def package_lambda(function_name, function_dir):
     """Package a Lambda function with its dependencies"""
@@ -34,18 +34,25 @@ def package_lambda(function_name, function_dir):
         requirements_file = os.path.join(temp_function_path, 'requirements.txt')
         if os.path.exists(requirements_file):
             print(f"     Installing dependencies for {function_name} (forcing source build for compatibility)...")
-            subprocess.run([
+            # Try with only-binary first, fallback to allowing source builds
+            pip_cmd = [
                 sys.executable, '-m', 'pip', 'install',
                 '--platform', 'linux_x86_64',
                 '--implementation', 'cp',
                 '--python-version', PYTHON_VERSION,
-                '--abi', 'cp39m',  # Adjust based on PYTHON_VERSION
                 '-r', requirements_file,
                 '-t', temp_function_path,
                 '--quiet',
-                '--only-binary=:all:',
                 '--upgrade'
-            ], check=True)
+            ]
+            
+            try:
+                # First attempt: only binary packages
+                subprocess.run(pip_cmd + ['--only-binary=:all:'], check=True)
+            except subprocess.CalledProcessError:
+                print(f"     Binary-only install failed, trying with source builds allowed...")
+                # Second attempt: allow source builds for packages without wheels
+                subprocess.run(pip_cmd + ['--no-binary=regex'], check=True)
 
             print(f"     Dependencies for {function_name} installed.")
         else:
