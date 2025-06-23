@@ -39,10 +39,6 @@ Thumbs.db
 # Logs
 *.log
 
-# Deployment packages
-deployments/
-*.zip
-
 # LocalStack
 .localstack/
 

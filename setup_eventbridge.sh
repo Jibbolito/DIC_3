@@ -144,7 +144,15 @@ EOF
 
     # Get function ARN
     echo "      Getting ARN for function: $lambda_function_name..."
-    local function_arn=$(awslocal lambda get-function --function-name "$lambda_function_name" | jq -r .Configuration.FunctionArn)
+    local function_arn
+    if [[ -f "jq.exe" ]]; then
+        function_arn=$(awslocal lambda get-function --function-name "$lambda_function_name" | ./jq.exe -r .Configuration.FunctionArn)
+    elif command -v jq &> /dev/null; then
+        function_arn=$(awslocal lambda get-function --function-name "$lambda_function_name" | jq -r .Configuration.FunctionArn)
+    else
+        echo "      jq not found, using manual parsing..."
+        function_arn=$(awslocal lambda get-function --function-name "$lambda_function_name" | grep -o '"FunctionArn":"[^"]*"' | cut -d'"' -f4)
+    fi
 
     if [ "$function_arn" == "null" ] || [ -z "$function_arn" ]; then
         echo "   ERROR: Could not find function: $lambda_function_name. Please ensure it's deployed before setting up triggers."

@@ -88,9 +88,10 @@ cd C:\path\to\DIC2025_Assignment3
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 
-# 3. Install dependencies
-pip install -r requirements.txt
-pip install requests  # Additional dependency for testing
+# 3. Install dependencies (Windows-compatible method)
+python install_requirements.py
+# OR if you prefer manual installation:
+# pip install -r requirements.txt
 
 # 4. Start Docker Desktop (ensure it's running)
 docker --version

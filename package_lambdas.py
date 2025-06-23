@@ -16,8 +16,15 @@ def package_lambda(function_name, function_dir):
     """Package a Lambda function with its dependencies"""
     print(f"  Packaging {function_name}...")
     
-    # Create temporary directory
-    with tempfile.TemporaryDirectory() as temp_dir:
+    # Create temporary directory with shorter path for Windows compatibility
+    if os.name == 'nt':  # Windows
+        temp_base = 'C:\\temp'
+        os.makedirs(temp_base, exist_ok=True)
+        temp_dir = tempfile.mkdtemp(dir=temp_base, prefix='lambda_')
+    else:
+        temp_dir = tempfile.mkdtemp()
+    
+    try:
         # Copy function code
         # Adjusted to match README.md: src/lambda_functions/<function_dir>/lambda_function.py
         function_path = os.path.join('src', 'lambda_functions', function_dir) 
@@ -34,6 +41,15 @@ def package_lambda(function_name, function_dir):
         requirements_file = os.path.join(temp_function_path, 'requirements.txt')
         if os.path.exists(requirements_file):
             print(f"     Installing dependencies for {function_name} (forcing source build for compatibility)...")
+            # Set up pip environment with shorter temp directory for Windows
+            pip_env = os.environ.copy()
+            if os.name == 'nt':  # Windows
+                pip_temp = 'C:\\temp\\pip'
+                os.makedirs(pip_temp, exist_ok=True)
+                pip_env['TMPDIR'] = pip_temp
+                pip_env['TMP'] = pip_temp
+                pip_env['TEMP'] = pip_temp
+            
             # Try different installation strategies for cross-platform packaging
             try:
                 # First attempt: only binary packages with platform constraints
@@ -48,7 +64,7 @@ def package_lambda(function_name, function_dir):
                     '--quiet',
                     '--only-binary=:all:',
                     '--upgrade'
-                ], check=True)
+                ], check=True, env=pip_env)
             except subprocess.CalledProcessError:
                 print(f"     Binary-only install failed, trying without platform constraints...")
                 try:
@@ -59,7 +75,7 @@ def package_lambda(function_name, function_dir):
                         '-t', temp_function_path,
                         '--quiet',
                         '--upgrade'
-                    ], check=True)
+                    ], check=True, env=pip_env)
                 except subprocess.CalledProcessError:
                     print(f"     Standard install failed, trying with --no-deps...")
                     # Third attempt: use --no-deps as last resort (your friend's original fix)
@@ -73,7 +89,7 @@ def package_lambda(function_name, function_dir):
                         '--quiet',
                         '--no-deps',
                         '--upgrade'
-                    ], check=True)
+                    ], check=True, env=pip_env)
 
             print(f"     Dependencies for {function_name} installed.")
         else:
@@ -96,6 +112,11 @@ def package_lambda(function_name, function_dir):
         
         print(f"     Created {package_path}")
         return package_path
+    
+    finally:
+        # Clean up temporary directory on Windows
+        if os.name == 'nt':
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 def main():
     """Package all Lambda functions"""

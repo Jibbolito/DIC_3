@@ -1,4 +1,4 @@
-# AWS dependencies
+# Core AWS dependencies
 boto3
 
 # NLP libraries for preprocessing
@@ -7,9 +7,7 @@ nltk
 # Profanity detection (as recommended in tips & tricks)
 profanityfilter
 
-# LocalStack (as required in environment setup)
-localstack
-localstack-client
+# AWS CLI tools
 awscli
 awscli-local
 
@@ -21,3 +19,7 @@ moto
 requests
 packaging
 regex
+
+# LocalStack - install separately on Windows using install_requirements.py
+# due to Windows long path issues. On Linux/Mac, install with:
+# pip install localstack localstack-client
