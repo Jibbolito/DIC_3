@@ -36,12 +36,15 @@ def package_lambda(function_name, function_dir):
             print(f"     Installing dependencies for {function_name} (forcing source build for compatibility)...")
             subprocess.run([
                 sys.executable, '-m', 'pip', 'install',
-                '--platform', 'linux_x86_64',  # Adjust as needed
+                '--platform', 'linux_x86_64',
+                '--implementation', 'cp',
+                '--python-version', PYTHON_VERSION,
+                '--abi', 'cp39m',  # Adjust based on PYTHON_VERSION
                 '-r', requirements_file,
                 '-t', temp_function_path,
                 '--quiet',
-                '--no-deps',
-                # '--only-binary=:all:',
+                '--only-binary=:all:',
+                '--upgrade'
             ], check=True)
 
             print(f"     Dependencies for {function_name} installed.")
