@@ -50,46 +50,59 @@ def package_lambda(function_name, function_dir):
                 pip_env['TMP'] = pip_temp
                 pip_env['TEMP'] = pip_temp
             
-            # Try different installation strategies for cross-platform packaging
+            # Force Linux platform packages for Lambda compatibility
+            print(f"     Installing Linux packages for Lambda...")
             try:
-                # First attempt: only binary packages with platform constraints
-                print(f"     Attempting binary-only install...")
+                # Force Linux packages - this is critical for Lambda deployment
                 subprocess.run([
                     sys.executable, '-m', 'pip', 'install',
                     '--platform', 'linux_x86_64',
+                    '--only-binary=:all:',
                     '--implementation', 'cp',
                     '--python-version', PYTHON_VERSION,
+                    '--abi', 'cp310m',
                     '-r', requirements_file,
                     '-t', temp_function_path,
                     '--quiet',
-                    '--only-binary=:all:',
-                    '--upgrade'
+                    '--upgrade',
+                    '--force-reinstall'
                 ], check=True, env=pip_env)
+                print(f"     Linux packages installed successfully!")
             except subprocess.CalledProcessError:
-                print(f"     Binary-only install failed, trying without platform constraints...")
-                try:
-                    # Second attempt: install without platform constraints (local packages)
-                    subprocess.run([
-                        sys.executable, '-m', 'pip', 'install',
-                        '-r', requirements_file,
-                        '-t', temp_function_path,
-                        '--quiet',
-                        '--upgrade'
-                    ], check=True, env=pip_env)
-                except subprocess.CalledProcessError:
-                    print(f"     Standard install failed, trying with --no-deps...")
-                    # Third attempt: use --no-deps as last resort (your friend's original fix)
-                    subprocess.run([
-                        sys.executable, '-m', 'pip', 'install',
-                        '--platform', 'linux_x86_64',
-                        '--implementation', 'cp',
-                        '--python-version', PYTHON_VERSION,
-                        '-r', requirements_file,
-                        '-t', temp_function_path,
-                        '--quiet',
-                        '--no-deps',
-                        '--upgrade'
-                    ], check=True, env=pip_env)
+                print(f"     Linux package install failed, trying individual packages...")
+                # Read requirements and install each package individually
+                with open(requirements_file, 'r') as f:
+                    packages = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+                
+                for package in packages:
+                    try:
+                        print(f"     Installing {package} for Linux...")
+                        subprocess.run([
+                            sys.executable, '-m', 'pip', 'install',
+                            '--platform', 'linux_x86_64',
+                            '--only-binary=:all:',
+                            '--implementation', 'cp',
+                            '--python-version', PYTHON_VERSION,
+                            '--abi', 'cp310m',
+                            package,
+                            '-t', temp_function_path,
+                            '--quiet',
+                            '--upgrade',
+                            '--force-reinstall'
+                        ], check=True, env=pip_env)
+                    except subprocess.CalledProcessError:
+                        print(f"     Warning: Could not install {package} with Linux binaries, trying no-binary...")
+                        subprocess.run([
+                            sys.executable, '-m', 'pip', 'install',
+                            '--platform', 'linux_x86_64',
+                            '--no-binary', package,
+                            '--implementation', 'cp',
+                            '--python-version', PYTHON_VERSION,
+                            package,
+                            '-t', temp_function_path,
+                            '--quiet',
+                            '--no-deps'
+                        ], check=True, env=pip_env)
 
             print(f"     Dependencies for {function_name} installed.")
         else:

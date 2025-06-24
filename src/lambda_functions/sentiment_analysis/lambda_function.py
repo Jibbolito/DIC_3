@@ -2,8 +2,7 @@ import json
 import boto3
 import logging
 import os
-import nltk
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
+import re
 
 # Configure logging
 logger = logging.getLogger()
@@ -14,17 +13,18 @@ s3_client = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb', endpoint_url=os.environ.get('AWS_ENDPOINT_URL')) # Use endpoint_url for LocalStack
 ssm_client = boto3.client('ssm', endpoint_url=os.environ.get('AWS_ENDPOINT_URL')) # Use endpoint_url for LocalStack
 
+# Simple sentiment keywords for basic analysis
+POSITIVE_WORDS = {
+    'good', 'great', 'excellent', 'amazing', 'awesome', 'wonderful', 'fantastic', 
+    'love', 'like', 'best', 'perfect', 'happy', 'pleased', 'satisfied', 'recommend',
+    'beautiful', 'nice', 'helpful', 'useful', 'quality', 'fast', 'easy', 'quick'
+}
 
-# Download NLTK data (for VADER sentiment analysis)
-# This part is crucial for Lambda cold starts. Ensure these are downloaded to /tmp if packaging.
-try:
-    nltk.data.find('sentiment/vader_lexicon')
-except LookupError:
-    nltk.download('vader_lexicon', download_dir='/tmp')
-    nltk.data.path.append('/tmp') # Add /tmp to NLTK data path
-
-# Initialize VADER sentiment analyzer
-analyzer = SentimentIntensityAnalyzer()
+NEGATIVE_WORDS = {
+    'bad', 'terrible', 'awful', 'horrible', 'hate', 'dislike', 'worst', 'poor',
+    'disappointed', 'unsatisfied', 'broken', 'defective', 'slow', 'difficult',
+    'expensive', 'cheap', 'useless', 'waste', 'problem', 'issue', 'wrong', 'error'
+}
 
 def get_parameter(name):
     """Retrieves a parameter from AWS SSM Parameter Store."""
@@ -45,7 +45,7 @@ except Exception as e:
 
 def analyze_sentiment_in_text(text: str) -> dict:
     """
-    Analyze sentiment of text using VADER.
+    Analyze sentiment of text using simple keyword matching.
     
     Args:
         text (str): Text to analyze.
@@ -55,8 +55,32 @@ def analyze_sentiment_in_text(text: str) -> dict:
     """
     if not text or not isinstance(text, str):
         return {'neg': 0, 'neu': 0, 'pos': 0, 'compound': 0}
-        
-    return analyzer.polarity_scores(text)
+    
+    # Convert to lowercase and split into words
+    words = re.findall(r'\b[a-zA-Z]+\b', text.lower())
+    
+    positive_count = sum(1 for word in words if word in POSITIVE_WORDS)
+    negative_count = sum(1 for word in words if word in NEGATIVE_WORDS)
+    total_words = len(words)
+    
+    if total_words == 0:
+        return {'neg': 0, 'neu': 1, 'pos': 0, 'compound': 0}
+    
+    # Calculate simple scores
+    pos_score = positive_count / total_words
+    neg_score = negative_count / total_words
+    neu_score = max(0, 1 - pos_score - neg_score)
+    
+    # Simple compound score calculation
+    compound = (positive_count - negative_count) / max(total_words, 1)
+    compound = max(-1, min(1, compound))  # Clamp between -1 and 1
+    
+    return {
+        'neg': round(neg_score, 3),
+        'neu': round(neu_score, 3), 
+        'pos': round(pos_score, 3),
+        'compound': round(compound, 3)
+    }
 
 def lambda_handler(event, context):
     """

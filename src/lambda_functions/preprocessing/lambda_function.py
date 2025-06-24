@@ -1,10 +1,6 @@
 import json
 import boto3
-import nltk
 import re
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
-from nltk.stem import WordNetLemmatizer
 import logging
 import os
 
@@ -15,20 +11,18 @@ logger.setLevel(logging.INFO)
 # Initialize AWS clients
 s3_client = boto3.client('s3')
 
-# Download NLTK data (this happens at cold start)
-try:
-    nltk.data.find('tokenizers/punkt')
-    nltk.data.find('corpora/stopwords')
-    nltk.data.find('corpora/wordnet')
-except LookupError:
-    nltk.download('punkt')
-    nltk.download('stopwords')
-    nltk.download('wordnet')
-    nltk.download('averaged_perceptron_tagger')
+# Basic English stop words (subset for basic processing)
+STOP_WORDS = {
+    'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'has', 'he',
+    'in', 'is', 'it', 'its', 'of', 'on', 'that', 'the', 'to', 'was', 'will', 'with',
+    'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 'your', 'yours',
+    'yourself', 'yourselves', 'him', 'his', 'himself', 'she', 'her', 'hers', 'herself',
+    'they', 'them', 'their', 'theirs', 'themselves', 'this', 'these', 'those'
+}
 
 def preprocess_text(text):
     """
-    Preprocess text by performing tokenization, stop word removal, and lemmatization
+    Preprocess text by performing basic tokenization and stop word removal
     
     Args:
         text (str): Raw text to preprocess
@@ -48,25 +42,34 @@ def preprocess_text(text):
     text = text.lower()
     text = re.sub(r'[^a-zA-Z0-9\s.,!?]', '', text)
     
-    # Tokenization
-    tokens = word_tokenize(text)
+    # Basic tokenization - split by whitespace and punctuation
+    tokens = re.findall(r'\b[a-zA-Z0-9]+\b', text)
     
-    # Remove stop words
-    stop_words = set(stopwords.words('english'))
-    filtered_tokens = [word for word in tokens if word not in stop_words and len(word) > 2]
+    # Remove stop words and short words
+    filtered_tokens = [word for word in tokens if word not in STOP_WORDS and len(word) > 2]
     
-    # Lemmatization
-    lemmatizer = WordNetLemmatizer()
-    lemmatized_tokens = [lemmatizer.lemmatize(word) for word in filtered_tokens]
+    # Basic stemming - remove common suffixes
+    processed_tokens = []
+    for word in filtered_tokens:
+        # Simple suffix removal
+        if word.endswith('ing'):
+            word = word[:-3]
+        elif word.endswith('ed'):
+            word = word[:-2]
+        elif word.endswith('er'):
+            word = word[:-2]
+        elif word.endswith('ly'):
+            word = word[:-2]
+        processed_tokens.append(word)
     
     # Join processed tokens back into text
-    processed_text = ' '.join(lemmatized_tokens)
+    processed_text = ' '.join(processed_tokens)
     
     return {
         'original_text': text,
-        'tokens': lemmatized_tokens,
+        'tokens': processed_tokens,
         'processed_text': processed_text,
-        'word_count': len(lemmatized_tokens)
+        'word_count': len(processed_tokens)
     }
 
 def lambda_handler(event, context):

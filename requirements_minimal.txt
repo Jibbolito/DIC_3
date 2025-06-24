@@ -1,0 +1,17 @@
+# AWS dependencies
+boto3
+
+# NLP libraries for preprocessing  
+nltk
+
+# Profanity detection (as recommended in tips & tricks)
+profanityfilter
+
+# Testing
+pytest
+moto
+
+# Utilities
+requests
+packaging
+regex
