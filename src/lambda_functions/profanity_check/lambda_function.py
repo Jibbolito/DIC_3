@@ -16,20 +16,15 @@ s3_client = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb', endpoint_url=os.environ.get('AWS_ENDPOINT_URL'))
 ssm_client = boto3.client('ssm', endpoint_url=os.environ.get('AWS_ENDPOINT_URL'))
 
-
-# Initialize profanity filter
-pf = ProfanityFilter()
-
 # Additional custom profanity words for enhanced detection
-CUSTOM_PROFANITY_WORDS = {
+CUSTOM_PROFANITY_WORDS = [
     'scam', 'fake', 'fraud', 'ripoff', 'rip-off', 'con', 
     'cheat', 'steal', 'stealing', 'robbed', 'robbery',
     'garbage', 'trash', 'worthless', 'pathetic', 'useless'
-}
+]
 
-# Add custom words to the filter
-for word in CUSTOM_PROFANITY_WORDS:
-    pf.add_word(word)
+# Initialize profanity filter
+pf = ProfanityFilter(extra_censor_list=CUSTOM_PROFANITY_WORDS)
 
 def get_parameter(name):
     """Retrieves a parameter from AWS SSM Parameter Store."""
@@ -120,7 +115,7 @@ def lambda_handler(event, context):
     AWS Lambda handler for profanity checking
     
     Args:
-        event: S3 event trigger from processed reviews
+        event: EventBridge S3 event trigger from processed reviews
         context: Lambda context
         
     Returns:
@@ -129,9 +124,14 @@ def lambda_handler(event, context):
     try:
         logger.info(f"Profanity check Lambda triggered with event: {json.dumps(event)}")
         
-        # Get bucket and object information from S3 event
-        bucket_name = event['Records'][0]['s3']['bucket']['name']
-        object_key = event['Records'][0]['s3']['object']['key']
+        # --- FIX: Parsing EventBridge S3 Event structure ---
+        s3_detail = event.get('detail')
+        if not s3_detail:
+            raise ValueError("Event does not contain 'detail' key for S3 event.")
+        
+        bucket_name = s3_detail['bucket']['name']
+        object_key = s3_detail['object']['key']
+        # --- END FIX ---
         
         logger.info(f"Processing file: {object_key} from bucket: {bucket_name}")
         

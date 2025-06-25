@@ -3,13 +3,21 @@ import boto3
 import re
 import logging
 import os
+import uuid # For generating unique IDs
 
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # Initialize AWS clients
-s3_client = boto3.client('s3')
+# Ensure endpoint_url and credentials are set for LocalStack compatibility
+s3_client = boto3.client(
+    's3',
+    endpoint_url=os.environ.get('AWS_ENDPOINT_URL', 'http://localhost:4566'),
+    aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID', 'test'),
+    aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY', 'test'),
+    region_name=os.environ.get('AWS_DEFAULT_REGION', 'us-east-1'),
+)
 
 # Basic English stop words (subset for basic processing)
 STOP_WORDS = {
@@ -77,123 +85,149 @@ def lambda_handler(event, context):
     AWS Lambda handler for preprocessing reviews
     
     Args:
-        event: S3 event trigger
+        event: EventBridge S3 event trigger
         context: Lambda context
         
     Returns:
         dict: Response with status and processing details
     """
+    processed_count = 0
     try:
         logger.info(f"Preprocessing Lambda triggered with event: {json.dumps(event)}")
         
-        # Get bucket and object information from S3 event
-        bucket_name = event['Records'][0]['s3']['bucket']['name']
-        object_key = event['Records'][0]['s3']['object']['key']
+        # --- FIX: Parsing EventBridge S3 Event structure ---
+        # S3 details are nested under the 'detail' key for EventBridge events.
+        s3_detail = event.get('detail')
+        if not s3_detail:
+            raise ValueError("Event does not contain 'detail' key for S3 event.")
         
+        bucket_name = s3_detail['bucket']['name']
+        object_key = s3_detail['object']['key']
+        # --- END FIX ---
+            
         logger.info(f"Processing file: {object_key} from bucket: {bucket_name}")
         
         # Download the review file from S3
         response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
         file_content = response['Body'].read().decode('utf-8')
         
-        # Handle both single JSON and JSONL formats
+        reviews_to_process = []
         try:
             # Try parsing as single JSON first
-            review_data = json.loads(file_content)
+            reviews_to_process.append(json.loads(file_content))
         except json.JSONDecodeError:
-            # If that fails, try parsing as JSONL (first line only for single review processing)
-            lines = file_content.strip().split('\n')
-            if lines:
-                review_data = json.loads(lines[0])
-            else:
-                raise ValueError("Empty file or invalid format")
+            # If that fails, try parsing as JSONL (each line is a separate JSON object)
+            for line in file_content.strip().split('\n'):
+                if line:
+                    try:
+                        reviews_to_process.append(json.loads(line))
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Error decoding JSON line in {object_key}: {line} - {e}")
         
-        # Process each field that needs analysis
-        processed_review = {
-            'review_id': review_data.get('asin', 'unknown'),
-            'reviewer_id': review_data.get('reviewerID', 'unknown'),
-            'reviewer_name': review_data.get('reviewerName', ''),
-            'overall_rating': review_data.get('overall', 0),
-            'timestamp': review_data.get('unixReviewTime', 0),
-            'category': review_data.get('category', ''),
-            'helpful': review_data.get('helpful', [0, 0]),
-            'original_summary': review_data.get('summary', ''),
-            'original_reviewText': review_data.get('reviewText', ''),
-            'original_overall': str(review_data.get('overall', '')),
-        }
-        
-        # Preprocess summary field
-        if processed_review['original_summary']:
-            summary_result = preprocess_text(processed_review['original_summary'])
-            processed_review['processed_summary'] = summary_result['processed_text']
-            processed_review['summary_tokens'] = summary_result['tokens']
-            processed_review['summary_word_count'] = summary_result['word_count']
-        else:
-            processed_review['processed_summary'] = ''
-            processed_review['summary_tokens'] = []
-            processed_review['summary_word_count'] = 0
-        
-        # Preprocess reviewText field
-        if processed_review['original_reviewText']:
-            reviewtext_result = preprocess_text(processed_review['original_reviewText'])
-            processed_review['processed_reviewText'] = reviewtext_result['processed_text']
-            processed_review['reviewText_tokens'] = reviewtext_result['tokens']
-            processed_review['reviewText_word_count'] = reviewtext_result['word_count']
-        else:
-            processed_review['processed_reviewText'] = ''
-            processed_review['reviewText_tokens'] = []
-            processed_review['reviewText_word_count'] = 0
-        
-        # Preprocess overall field (convert to text and process)
-        if processed_review['original_overall']:
-            overall_result = preprocess_text(processed_review['original_overall'])
-            processed_review['processed_overall'] = overall_result['processed_text']
-            processed_review['overall_tokens'] = overall_result['tokens']
-            processed_review['overall_word_count'] = overall_result['word_count']
-        else:
-            processed_review['processed_overall'] = ''
-            processed_review['overall_tokens'] = []
-            processed_review['overall_word_count'] = 0
-        
-        # Add processing metadata
-        processed_review['processing_stage'] = 'preprocessed'
-        processed_review['total_word_count'] = (
-            processed_review['summary_word_count'] + 
-            processed_review['reviewText_word_count'] + 
-            processed_review['overall_word_count']
-        )
-        
+        if not reviews_to_process:
+            logger.warning(f"No valid JSON reviews found in file: {object_key}")
+            return {
+                'statusCode': 200,
+                'body': json.dumps({'message': f'No valid reviews to process in {object_key}'})
+            }
+
         # Use environment variable for output bucket or default
         processed_bucket = os.environ.get('PROCESSED_BUCKET', 'processed-reviews-bucket')
-        
-        # Save processed review to S3 for next stage
-        processed_key = f"processed/{object_key}"
-        s3_client.put_object(
-            Bucket=processed_bucket,
-            Key=processed_key,
-            Body=json.dumps(processed_review, indent=2),
-            ContentType='application/json'
-        )
-        
-        logger.info(f"Successfully processed review and saved to {processed_bucket}/{processed_key}")
+
+        for review_data in reviews_to_process:
+            # Process each individual review
+            processed_review = process_single_review(review_data, object_key)
+
+            # Construct a unique key for each processed review.
+            # Use review_id (asin) from the review if available, otherwise generate a UUID.
+            # This is crucial for JSONL files containing multiple reviews.
+            review_id_for_key = processed_review.get('review_id', str(uuid.uuid4()))
+            processed_key = f"processed/{review_id_for_key}.json"
+
+            # Save processed review to S3 for next stage
+            s3_client.put_object(
+                Bucket=processed_bucket,
+                Key=processed_key,
+                Body=json.dumps(processed_review, indent=2), # Ensure 'review_data' is the single processed review
+                ContentType='application/json'
+            )
+            logger.info(f"Successfully processed review '{review_id_for_key}' and saved to {processed_bucket}/{processed_key}")
+            processed_count += 1
         
         return {
             'statusCode': 200,
             'body': json.dumps({
-                'message': 'Review successfully preprocessed',
-                'review_id': processed_review['review_id'],
-                'reviewer_id': processed_review['reviewer_id'],
-                'total_words': processed_review['total_word_count'],
-                'output_location': f"s3://{processed_bucket}/{processed_key}"
+                'message': f'{processed_count} review(s) successfully preprocessed and sent to {processed_bucket}',
+                'processed_count': processed_count
             })
         }
         
     except Exception as e:
-        logger.error(f"Error processing review: {str(e)}")
+        logger.error(f"Error processing reviews: {str(e)}")
         return {
             'statusCode': 500,
             'body': json.dumps({
-                'error': 'Failed to preprocess review',
+                'error': 'Failed to preprocess reviews',
                 'details': str(e)
             })
         }
+
+def process_single_review(review_data: dict, original_object_key: str) -> dict:
+    """
+    Helper function to perform preprocessing on a single review dictionary.
+    """
+    processed_review = {
+        'review_id': review_data.get('asin', 'unknown'), # 'asin' is often used as product ID, can be review ID
+        'reviewer_id': review_data.get('reviewerID', 'unknown'),
+        'reviewer_name': review_data.get('reviewerName', ''),
+        'overall_rating': review_data.get('overall', 0),
+        'timestamp': review_data.get('unixReviewTime', 0),
+        'category': review_data.get('category', ''),
+        'helpful': review_data.get('helpful', [0, 0]),
+        'original_summary': review_data.get('summary', ''),
+        'original_reviewText': review_data.get('reviewText', ''),
+        'original_overall': str(review_data.get('overall', '')),
+        'original_object_key': original_object_key # Keep track of original source file
+    }
+    
+    # Preprocess summary field
+    if processed_review['original_summary']:
+        summary_result = preprocess_text(processed_review['original_summary'])
+        processed_review['processed_summary'] = summary_result['processed_text']
+        processed_review['summary_tokens'] = summary_result['tokens']
+        processed_review['summary_word_count'] = summary_result['word_count']
+    else:
+        processed_review['processed_summary'] = ''
+        processed_review['summary_tokens'] = []
+        processed_review['summary_word_count'] = 0
+    
+    # Preprocess reviewText field
+    if processed_review['original_reviewText']:
+        reviewtext_result = preprocess_text(processed_review['original_reviewText'])
+        processed_review['processed_reviewText'] = reviewtext_result['processed_text']
+        processed_review['reviewText_tokens'] = reviewtext_result['tokens']
+        processed_review['reviewText_word_count'] = reviewtext_result['word_count']
+    else:
+        processed_review['processed_reviewText'] = ''
+        processed_review['reviewText_tokens'] = []
+        processed_review['reviewText_word_count'] = 0
+    
+    # Preprocess overall field (convert to text and process)
+    if processed_review['original_overall']:
+        overall_result = preprocess_text(processed_review['original_overall'])
+        processed_review['processed_overall'] = overall_result['processed_text']
+        processed_review['overall_tokens'] = overall_result['tokens']
+        processed_review['overall_word_count'] = overall_result['word_count']
+    else:
+        processed_review['processed_overall'] = ''
+        processed_review['overall_tokens'] = []
+        processed_review['overall_word_count'] = 0
+    
+    # Add processing metadata
+    processed_review['processing_stage'] = 'preprocessed'
+    processed_review['total_word_count'] = (
+        processed_review['summary_word_count'] + 
+        processed_review['reviewText_word_count'] + 
+        processed_review['overall_word_count']
+    )
+    return processed_review

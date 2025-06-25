@@ -87,7 +87,7 @@ def lambda_handler(event, context):
     AWS Lambda handler for sentiment analysis.
     
     Args:
-        event: S3 event trigger from processed/profanity-checked reviews.
+        event: EventBridge S3 event trigger from processed/profanity-checked reviews.
         context: Lambda context.
         
     Returns:
@@ -96,9 +96,14 @@ def lambda_handler(event, context):
     try:
         logger.info(f"Sentiment analysis Lambda triggered with event: {json.dumps(event)}")
         
-        # Get bucket and object information from S3 event
-        bucket_name = event['Records'][0]['s3']['bucket']['name']
-        object_key = event['Records'][0]['s3']['object']['key']
+        # --- FIX: Parsing EventBridge S3 Event structure ---
+        s3_detail = event.get('detail')
+        if not s3_detail:
+            raise ValueError("Event does not contain 'detail' key for S3 event.")
+        
+        bucket_name = s3_detail['bucket']['name']
+        object_key = s3_detail['object']['key']
+        # --- END FIX ---
         
         logger.info(f"Analyzing sentiment for file: {object_key} from bucket: {bucket_name}")
         

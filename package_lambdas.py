@@ -16,95 +16,76 @@ def package_lambda(function_name, function_dir):
     """Package a Lambda function with its dependencies"""
     print(f"  Packaging {function_name}...")
     
-    # Create temporary directory with shorter path for Windows compatibility
-    if os.name == 'nt':  # Windows
+    # Create temporary directory.
+    # On Windows, using a shorter path in C:\temp to avoid MAX_PATH issues
+    if os.name == 'nt':
         temp_base = 'C:\\temp'
         os.makedirs(temp_base, exist_ok=True)
         temp_dir = tempfile.mkdtemp(dir=temp_base, prefix='lambda_')
     else:
-        temp_dir = tempfile.mkdtemp()
+        temp_dir = tempfile.mkdtemp() # Standard temp directory on Linux/macOS
     
     try:
-        # Copy function code
-        # Adjusted to match README.md: src/lambda_functions/<function_dir>/lambda_function.py
-        function_path = os.path.join('src', 'lambda_functions', function_dir) 
-        temp_function_path = os.path.join(temp_dir, 'function')
+        # Define the path to the source code for this specific Lambda function
+        # This is where your lambda_function.py resides, e.g., src/preprocessing
+        function_src_path = os.path.join('src', 'lambda_functions', function_dir) 
         
         # Ensure the source directory exists
-        if not os.path.exists(function_path):
-            print(f"     Error: Source directory '{function_path}' not found for {function_name}.")
+        if not os.path.exists(function_src_path):
+            print(f"     Error: Source directory '{function_src_path}' not found for {function_name}.")
             return None
 
-        shutil.copytree(function_path, temp_function_path)
+        # Copy all contents from the function's source directory directly into temp_dir.
+        # This ensures lambda_function.py and requirements.txt are at the root
+        # of the temporary directory, and thus at the root of the final zip.
+        for item in os.listdir(function_src_path):
+            s = os.path.join(function_src_path, item)
+            d = os.path.join(temp_dir, item)
+            if os.path.isdir(s):
+                shutil.copytree(s, d)
+            else:
+                shutil.copy2(s, d)
         
         # Install dependencies if requirements.txt exists
-        requirements_file = os.path.join(temp_function_path, 'requirements.txt')
+        requirements_file = os.path.join(temp_dir, 'requirements.txt')
         if os.path.exists(requirements_file):
-            print(f"     Installing dependencies for {function_name} (forcing source build for compatibility)...")
+            print(f"     Installing dependencies for {function_name} (forcing Linux binaries)...")
+            
             # Set up pip environment with shorter temp directory for Windows
             pip_env = os.environ.copy()
-            if os.name == 'nt':  # Windows
+            if os.name == 'nt':
                 pip_temp = 'C:\\temp\\pip'
                 os.makedirs(pip_temp, exist_ok=True)
                 pip_env['TMPDIR'] = pip_temp
                 pip_env['TMP'] = pip_temp
                 pip_env['TEMP'] = pip_temp
             
-            # Force Linux platform packages for Lambda compatibility
-            print(f"     Installing Linux packages for Lambda...")
             try:
-                # Force Linux packages - this is critical for Lambda deployment
+                # This command forces pip to download and install manylinux wheels
+                # compatible with the Lambda execution environment (linux_x86_64).
+                # --only-binary=:all: ensures it prefers pre-built binaries.
+                # --upgrade and --force-reinstall ensure a clean install.
                 subprocess.run([
                     sys.executable, '-m', 'pip', 'install',
                     '--platform', 'linux_x86_64',
                     '--only-binary=:all:',
                     '--implementation', 'cp',
                     '--python-version', PYTHON_VERSION,
-                    '--abi', 'cp310m',
+                    '--abi', f'cp{PYTHON_VERSION.replace(".", "")}m', # e.g., cp310m for python3.10
                     '-r', requirements_file,
-                    '-t', temp_function_path,
+                    '-t', temp_dir, # Install directly into the root of the temporary dir
                     '--quiet',
                     '--upgrade',
                     '--force-reinstall'
                 ], check=True, env=pip_env)
-                print(f"     Linux packages installed successfully!")
-            except subprocess.CalledProcessError:
-                print(f"     Linux package install failed, trying individual packages...")
-                # Read requirements and install each package individually
-                with open(requirements_file, 'r') as f:
-                    packages = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-                
-                for package in packages:
-                    try:
-                        print(f"     Installing {package} for Linux...")
-                        subprocess.run([
-                            sys.executable, '-m', 'pip', 'install',
-                            '--platform', 'linux_x86_64',
-                            '--only-binary=:all:',
-                            '--implementation', 'cp',
-                            '--python-version', PYTHON_VERSION,
-                            '--abi', 'cp310m',
-                            package,
-                            '-t', temp_function_path,
-                            '--quiet',
-                            '--upgrade',
-                            '--force-reinstall'
-                        ], check=True, env=pip_env)
-                    except subprocess.CalledProcessError:
-                        print(f"     Warning: Could not install {package} with Linux binaries, trying no-binary...")
-                        subprocess.run([
-                            sys.executable, '-m', 'pip', 'install',
-                            '--platform', 'linux_x86_64',
-                            '--no-binary', package,
-                            '--implementation', 'cp',
-                            '--python-version', PYTHON_VERSION,
-                            package,
-                            '-t', temp_function_path,
-                            '--quiet',
-                            '--no-deps'
-                        ], check=True, env=pip_env)
-
-            print(f"     Dependencies for {function_name} installed.")
+                print(f"     Dependencies for {function_name} installed successfully.")
+            except subprocess.CalledProcessError as e:
+                print(f"     Error installing Linux packages for {function_name}: {e}")
+                print("     This might indicate a missing or incompatible dependency.")
+                return None
+            except Exception as e:
+                print(f"     An unexpected error occurred during pip install for {function_name}: {e}")
+                return None
         else:
             print(f"     No requirements.txt found for {function_name}. Skipping dependency installation.")
 
@@ -115,28 +96,32 @@ def package_lambda(function_name, function_dir):
         # Ensure deployments directory exists
         os.makedirs('deployments', exist_ok=True)
         
-        # Create zip file
+        # Create zip file from the contents of the temporary directory.
+        # arcname ensures files are placed at the root of the zip.
         with zipfile.ZipFile(package_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for root, dirs, files in os.walk(temp_function_path):
+            for root, dirs, files in os.walk(temp_dir):
                 for file in files:
                     file_path = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path, temp_function_path)
+                    # This calculates the path relative to temp_dir,
+                    # effectively putting everything at the zip's root.
+                    arcname = os.path.relpath(file_path, temp_dir)
                     zipf.write(file_path, arcname)
         
         print(f"     Created {package_path}")
         return package_path
     
     finally:
-        # Clean up temporary directory on Windows
-        if os.name == 'nt':
+        # Clean up temporary directory
+        if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
 
 def main():
     """Package all Lambda functions"""
     print("  Starting Lambda packaging...")
     
-    # Define your Lambda functions and their corresponding directories
-    # Assumes your Lambda handler is lambda_function.py inside these directories
+    # Define your Lambda functions and their corresponding directories under 'src'
+    # The 'function_dir' here should match the folder name under 'src'.
+    # E.g., 'src/preprocessing'
     functions_to_package = [
         ('preprocessing', 'preprocessing'),
         ('profanity_check', 'profanity_check'),
