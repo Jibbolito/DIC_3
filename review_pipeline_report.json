@@ -1,9 +1,15 @@
 {
-  "total_reviews": 6166,
-  "positive_reviews": 0,
-  "neutral_reviews": 0,
-  "negative_reviews": 0,
-  "failed_profanity_check": 0,
+  "s3_raw_bucket_count": 1,
+  "s3_processed_bucket_count": 33890,
+  "s3_clean_bucket_count": 899,
+  "s3_flagged_bucket_count": 20,
+  "s3_final_reviews_bucket_count": 0,
+  "dynamodb_profanity_table_count": 20,
+  "total_reviews_processed_to_final": 0,
+  "positive_reviews_final": 0,
+  "neutral_reviews_final": 0,
+  "negative_reviews_final": 0,
+  "failed_profanity_check_flagged_bucket": 20,
   "banned_users_count": 0,
   "banned_users": []
 }

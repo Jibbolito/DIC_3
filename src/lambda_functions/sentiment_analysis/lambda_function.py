@@ -9,10 +9,24 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # Initialize AWS clients
-s3_client = boto3.client('s3')
-dynamodb = boto3.resource('dynamodb', endpoint_url=os.environ.get('AWS_ENDPOINT_URL')) # Use endpoint_url for LocalStack
-ssm_client = boto3.client('ssm', endpoint_url=os.environ.get('AWS_ENDPOINT_URL')) # Use endpoint_url for LocalStack
-
+REGION = os.environ.get('AWS_DEFAULT_REGION', 'us-east-1') # Define region
+s3_client = boto3.client(
+    's3',
+    endpoint_url=os.environ.get('AWS_ENDPOINT_URL'), # Keep endpoint for LocalStack
+    aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
+    region_name=REGION,
+)
+dynamodb = boto3.resource(
+    'dynamodb',
+    endpoint_url=os.environ.get('AWS_ENDPOINT_URL'), # Keep endpoint for LocalStack
+    region_name=REGION,
+)
+ssm_client = boto3.client(
+    'ssm',
+    endpoint_url=os.environ.get('AWS_ENDPOINT_URL'), # Keep endpoint for LocalStack
+    region_name=REGION,
+)
 # Simple sentiment keywords for basic analysis
 POSITIVE_WORDS = {
     'good', 'great', 'excellent', 'amazing', 'awesome', 'wonderful', 'fantastic', 

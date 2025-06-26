@@ -10,7 +10,6 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # Initialize AWS clients
-# Ensure endpoint_url and credentials are set for LocalStack compatibility
 s3_client = boto3.client(
     's3',
     endpoint_url=os.environ.get('AWS_ENDPOINT_URL', 'http://localhost:4566'),
@@ -19,18 +18,33 @@ s3_client = boto3.client(
     region_name=os.environ.get('AWS_DEFAULT_REGION', 'us-east-1'),
 )
 
-# Basic English stop words (subset for basic processing)
-STOP_WORDS = {
-    'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'has', 'he',
-    'in', 'is', 'it', 'its', 'of', 'on', 'that', 'the', 'to', 'was', 'will', 'with',
-    'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 'your', 'yours',
-    'yourself', 'yourselves', 'him', 'his', 'himself', 'she', 'her', 'hers', 'herself',
-    'they', 'them', 'their', 'theirs', 'themselves', 'this', 'these', 'those'
-}
+# --- Load STOP_WORDS from external file ---
+STOP_WORDS = set()
+try:
+    # Assuming stopwords.txt is in the same directory as lambda_function.py
+    # which means it's at the root of the Lambda deployment package.
+    with open('stopwords.txt', 'r', encoding='utf-8') as f:
+        # Read each line, strip whitespace (including \r from Windows files)
+        # and convert to a set for efficient lookup.
+        STOP_WORDS = {line.strip() for line in f if line.strip()}
+    logger.info(f"Loaded {len(STOP_WORDS)} stopwords from stopwords.txt")
+except FileNotFoundError:
+    logger.error("stopwords.txt not found. Using empty stop words set.")
+    # Fallback to an empty set if the file is not found
+    STOP_WORDS = set()
+except Exception as e:
+    logger.error(f"Error loading stopwords.txt: {e}. Using empty stop words set.")
+    STOP_WORDS = set()
+
 
 def preprocess_text(text):
     """
-    Preprocess text by performing basic tokenization and stop word removal
+    Preprocess text by performing:
+    1. Lowercasing
+    2. Removal of all punctuation
+    3. Tokenization
+    4. Stop word removal using the loaded STOP_WORDS set
+    5. Basic stemming
     
     Args:
         text (str): Raw text to preprocess
@@ -46,21 +60,27 @@ def preprocess_text(text):
             'word_count': 0
         }
     
-    # Convert to lowercase and remove special characters (except basic punctuation)
+    # Convert to lowercase
     text = text.lower()
-    text = re.sub(r'[^a-zA-Z0-9\s.,!?]', '', text)
     
-    # Basic tokenization - split by whitespace and punctuation
-    tokens = re.findall(r'\b[a-zA-Z0-9]+\b', text)
+    # --- FIX: Remove all punctuation ---
+    # This regex replaces anything that is NOT a letter, number, or whitespace with an empty string.
+    text = re.sub(r'[^\w\s]', '', text)
     
-    # Remove stop words and short words
+    # Tokenization - split by whitespace (after punctuation removal)
+    tokens = text.split()
+    
+    # Remove stop words and short words (length 2 or less)
+    # Using the externally loaded STOP_WORDS set
     filtered_tokens = [word for word in tokens if word not in STOP_WORDS and len(word) > 2]
     
     # Basic stemming - remove common suffixes
     processed_tokens = []
     for word in filtered_tokens:
-        # Simple suffix removal
         if word.endswith('ing'):
+            # Example: 'running' -> 'runn' (not 'run')
+            word = word[:-3] + 'n' if word.endswith('ing') and len(word) > 3 else word[:-3] # A more nuanced example, or just word[:-3]
+            # Simple fix: just remove 'ing'
             word = word[:-3]
         elif word.endswith('ed'):
             word = word[:-2]
@@ -92,10 +112,10 @@ def lambda_handler(event, context):
         dict: Response with status and processing details
     """
     processed_count = 0
+    file_content = "" # Initialize for logging purposes if error occurs early
     try:
         logger.info(f"Preprocessing Lambda triggered with event: {json.dumps(event)}")
         
-        # --- FIX: Parsing EventBridge S3 Event structure ---
         # S3 details are nested under the 'detail' key for EventBridge events.
         s3_detail = event.get('detail')
         if not s3_detail:
@@ -103,7 +123,6 @@ def lambda_handler(event, context):
         
         bucket_name = s3_detail['bucket']['name']
         object_key = s3_detail['object']['key']
-        # --- END FIX ---
             
         logger.info(f"Processing file: {object_key} from bucket: {bucket_name}")
         
@@ -112,6 +131,7 @@ def lambda_handler(event, context):
         file_content = response['Body'].read().decode('utf-8')
         
         reviews_to_process = []
+        parsing_error = False
         try:
             # Try parsing as single JSON first
             reviews_to_process.append(json.loads(file_content))
@@ -123,32 +143,39 @@ def lambda_handler(event, context):
                         reviews_to_process.append(json.loads(line))
                     except json.JSONDecodeError as e:
                         logger.error(f"Error decoding JSON line in {object_key}: {line} - {e}")
+                        parsing_error = True # Mark that a parsing error occurred
         
-        if not reviews_to_process:
-            logger.warning(f"No valid JSON reviews found in file: {object_key}")
+        # --- FIX: Return 500 for invalid JSON input if no reviews could be parsed ---
+        if not reviews_to_process and len(file_content) > 0:
+            error_message = f"Input file '{object_key}' contains no valid JSON reviews or is malformed."
+            if parsing_error:
+                error_message += " One or more lines failed JSON parsing."
+            logger.error(error_message)
             return {
-                'statusCode': 200,
-                'body': json.dumps({'message': f'No valid reviews to process in {object_key}'})
+                'statusCode': 500, # Return 500 for genuinely unparsable input
+                'body': json.dumps({'error': 'Failed to preprocess reviews due to invalid input format', 'details': error_message})
             }
+        elif not reviews_to_process and len(file_content) == 0:
+             logger.warning(f"Input file '{object_key}' is empty. No reviews to process.")
+             return {
+                'statusCode': 200, # Still 200 for genuinely empty file as it's not an error to handle
+                'body': json.dumps({'message': f'Input file is empty. No reviews to process in {object_key}'})
+             }
+        # --- END FIX ---
 
-        # Use environment variable for output bucket or default
+
         processed_bucket = os.environ.get('PROCESSED_BUCKET', 'processed-reviews-bucket')
 
         for review_data in reviews_to_process:
-            # Process each individual review
             processed_review = process_single_review(review_data, object_key)
 
-            # Construct a unique key for each processed review.
-            # Use review_id (asin) from the review if available, otherwise generate a UUID.
-            # This is crucial for JSONL files containing multiple reviews.
             review_id_for_key = processed_review.get('review_id', str(uuid.uuid4()))
             processed_key = f"processed/{review_id_for_key}.json"
 
-            # Save processed review to S3 for next stage
             s3_client.put_object(
                 Bucket=processed_bucket,
                 Key=processed_key,
-                Body=json.dumps(processed_review, indent=2), # Ensure 'review_data' is the single processed review
+                Body=json.dumps(processed_review, indent=2),
                 ContentType='application/json'
             )
             logger.info(f"Successfully processed review '{review_id_for_key}' and saved to {processed_bucket}/{processed_key}")
