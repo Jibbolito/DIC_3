@@ -12,6 +12,33 @@ import sys
 # Constants
 PYTHON_VERSION = '3.10'  # Adjust as needed for your Lambda runtime
 
+def setup_nltk_data(temp_function_path):
+    """Download and setup NLTK data for Lambda packaging (English only)"""
+    nltk_data_dir = os.path.join(temp_function_path, 'nltk_data')
+    os.makedirs(nltk_data_dir, exist_ok=True)
+    
+    print(f"     Downloading minimal NLTK data to {nltk_data_dir}...")
+    
+    # Download required NLTK data
+    required_datasets = ['punkt', 'stopwords', 'wordnet']
+    
+    for dataset in required_datasets:
+        try:
+            nltk.download(dataset, download_dir=nltk_data_dir, quiet=True)
+            print(f"       ✓ Downloaded {dataset}")
+        except Exception as e:
+            print(f"       ✗ Failed to download {dataset}: {e}")
+    
+    # Remove unnecessary language files to reduce size
+    stopwords_dir = os.path.join(nltk_data_dir, 'corpora', 'stopwords')
+    if os.path.exists(stopwords_dir):
+        print(f"     Cleaning up non-English stopwords...")
+        for item in os.listdir(stopwords_dir):
+            if item != 'english' and os.path.isfile(os.path.join(stopwords_dir, item)):
+                os.remove(os.path.join(stopwords_dir, item))
+                
+    return nltk_data_dir
+
 def package_lambda(function_name, function_dir):
     """Package a Lambda function with its dependencies"""
     print(f"  Packaging {function_name}...")
@@ -52,8 +79,15 @@ def package_lambda(function_name, function_dir):
             
             # Try different installation strategies for cross-platform packaging
             try:
-                # First attempt: only binary packages with platform constraints
-                print(f"     Attempting binary-only install...")
+                # First attempt: Platform-specific install with regex fix
+                print(f"     Installing dependencies with platform-specific wheels...")
+                subprocess.run([
+                    sys.executable, '-m', 'pip', 'install',
+                    'regex', '--platform=manylinux2014_x86_64', 
+                    '--only-binary=:all:', '--target', temp_function_path
+                ], check=True, env=pip_env)
+                
+                # Install other requirements
                 subprocess.run([
                     sys.executable, '-m', 'pip', 'install',
                     '--platform', 'linux_x86_64',
@@ -94,6 +128,10 @@ def package_lambda(function_name, function_dir):
             print(f"     Dependencies for {function_name} installed.")
         else:
             print(f"     No requirements.txt found for {function_name}. Skipping dependency installation.")
+        
+        # Skip NLTK data setup for now to avoid Docker issues
+        # if function_name == 'preprocessing':
+        #     setup_nltk_data(temp_function_path)
 
         # Create deployment package
         package_name = f"{function_name}_deployment.zip"
@@ -118,9 +156,50 @@ def package_lambda(function_name, function_dir):
         if os.name == 'nt':
             shutil.rmtree(temp_dir, ignore_errors=True)
 
+def create_nltk_layer():
+    """Create a separate Lambda layer with NLTK data"""
+    print("  Creating NLTK Lambda layer...")
+    
+    # Create temporary directory
+    if os.name == 'nt':  # Windows
+        temp_base = 'C:\\temp'
+        os.makedirs(temp_base, exist_ok=True)
+        temp_dir = tempfile.mkdtemp(dir=temp_base, prefix='nltk_layer_')
+    else:
+        temp_dir = tempfile.mkdtemp()
+    
+    try:
+        # Create the layer structure
+        layer_dir = os.path.join(temp_dir, 'python')
+        os.makedirs(layer_dir, exist_ok=True)
+        
+        # Setup NLTK data in the layer
+        nltk_data_dir = setup_nltk_data(layer_dir)
+        
+        # Create layer package
+        layer_package = os.path.join('deployments', 'nltk_layer.zip')
+        os.makedirs('deployments', exist_ok=True)
+        
+        with zipfile.ZipFile(layer_package, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(temp_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, temp_dir)
+                    zipf.write(file_path, arcname)
+        
+        print(f"     Created {layer_package}")
+        return layer_package
+        
+    finally:
+        if os.name == 'nt':
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
 def main():
     """Package all Lambda functions"""
     print("  Starting Lambda packaging...")
+    
+    # Skip NLTK layer for now to fix deployment issues
+    print("  Skipping NLTK layer creation to avoid Docker dependency issues")
     
     # Define your Lambda functions and their corresponding directories
     # Assumes your Lambda handler is lambda_function.py inside these directories

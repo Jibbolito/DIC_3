@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git checkout:*)",
+      "Bash(git reset:*)",
+      "Bash(pip install:*)",
+      "Bash(python3:*)",
+      "Bash(python:*)",
+      "Bash(apt list:*)",
+      "Bash(ls:*)",
+      "Bash(curl:*)",
+      "Bash(bash:*)",
+      "Bash(aws lambda get-function:*)",
+      "Bash(export AWS_ACCESS_KEY_ID=test)",
+      "Bash(export AWS_SECRET_ACCESS_KEY=test)",
+      "Bash(export:*)",
+      "Bash(mkdir:*)",
+      "Bash(zip:*)",
+      "Bash(aws lambda delete-function:*)",
+      "Bash(pip3 install:*)",
+      "Bash(apt install:*)",
+      "Bash(sudo apt install:*)",
+      "Bash(docker logs:*)",
+      "Bash(./setup_eventbridge.sh:*)",
+      "Bash(touch:*)"
+    ],
+    "deny": []
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "test_parameters": {
+    "max_reviews_processed": 10000,
+    "actual_reviews_processed": 10000,
+    "sampling_strategy": "Every 10th for S3, every 20th for DynamoDB"
+  },
+  "total_reviews": 10000,
+  "positive_reviews": 7770,
+  "neutral_reviews": 932,
+  "negative_reviews": 1298,
+  "failed_profanity_check": 1214,
+  "banned_users_count": 1,
+  "banned_users": [
+    {
+      "user_id": "AFVQZQ8PW0L",
+      "unpolite_count": 4
+    }
+  ],
+  "serverless_infrastructure_usage": {
+    "s3_operations": 3106,
+    "dynamodb_operations": 60,
+    "total_aws_api_calls": 3166,
+    "infrastructure": "LocalStack",
+    "processing_pattern": "Serverless Lambda simulation"
+  }
+}

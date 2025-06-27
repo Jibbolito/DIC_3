@@ -9,11 +9,22 @@ export AWS_SECRET_ACCESS_KEY=test
 export AWS_DEFAULT_REGION="us-east-1"
 export AWS_ENDPOINT_URL="http://localhost:4566"
 
-# Delete existing functions first
-echo "Cleaning up existing functions..."
+# Delete existing functions and layers first
+echo "Cleaning up existing functions and layers..."
 aws lambda delete-function --function-name review-preprocessing-dev --endpoint-url=http://localhost:4566 2>/dev/null || true
 aws lambda delete-function --function-name review-profanity-check-dev --endpoint-url=http://localhost:4566 2>/dev/null || true
 aws lambda delete-function --function-name review-sentiment-analysis-dev --endpoint-url=http://localhost:4566 2>/dev/null || true
+aws lambda delete-layer-version --layer-name nltk-layer --version-number 1 --endpoint-url=http://localhost:4566 2>/dev/null || true
+
+echo "Creating NLTK Lambda layer..."
+LAYER_VERSION=$(aws lambda publish-layer-version \
+    --layer-name nltk-layer \
+    --zip-file fileb://deployments/nltk_layer.zip \
+    --compatible-runtimes python3.10 \
+    --endpoint-url=http://localhost:4566 \
+    --query 'Version' --output text)
+
+echo "NLTK layer created with version: $LAYER_VERSION"
 
 echo "Creating preprocessing function..."
 aws lambda create-function \

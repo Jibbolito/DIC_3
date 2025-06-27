@@ -1,4 +1,1 @@
 boto3
-nltk
-textblob
-regex

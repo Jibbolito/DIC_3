@@ -1,0 +1,12 @@
+{
+    "detail-type": "Object Created",
+    "source": "aws.s3",
+    "detail": {
+      "bucket": {
+        "name": "raw-reviews-bucket"
+      },
+      "object": {
+        "key": "test-review-clean.json"
+      }
+    }
+  }
