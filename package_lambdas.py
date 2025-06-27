@@ -123,6 +123,7 @@ def main():
     # The 'function_dir' here should match the folder name under 'src'.
     # E.g., 'src/preprocessing'
     functions_to_package = [
+        ('splitter', 'splitter'),
         ('preprocessing', 'preprocessing'),
         ('profanity_check', 'profanity_check'),
         ('sentiment_analysis', 'sentiment_analysis')

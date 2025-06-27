@@ -17,8 +17,8 @@ echo ""
 # Check if LocalStack is running before proceeding
 echo "📡 Checking LocalStack status... (This may take a moment)"
 # Allow LocalStack to fully start up and health check before proceeding
-timeout 90 bash -c 'until curl -s http://localhost:4566/_localstack/health | grep -q "running"; do echo -n "."; sleep 1; done' || \
-{ echo "   ERROR: LocalStack is not running or did not start within 90 seconds. Please ensure it's running and accessible."; exit 1; }
+timeout 150 bash -c 'until curl -s http://localhost:4566/_localstack/health | grep -q "running"; do echo -n "."; sleep 1; done' || \
+{ echo "   ERROR: LocalStack is not running or did not start within 150 seconds. Please ensure it's running and accessible."; exit 1; }
 echo "   LocalStack is running. Proceeding with AWS resource creation."
 
 # Set AWS CLI to use LocalStack
@@ -32,6 +32,7 @@ echo "--- Section 1: AWS Resource Creation (S3 Buckets, DynamoDB, SSM Parameters
 
 # Define resource names
 RAW_BUCKET="raw-reviews-bucket"
+SPLIT_BUCKET="split-reviews-bucket" # NEW BUCKET FOR SPLIT FILES
 PROCESSED_BUCKET="processed-reviews-bucket"
 CLEAN_BUCKET="clean-reviews-bucket"
 FLAGGED_BUCKET="flagged-reviews-bucket"
@@ -40,6 +41,7 @@ CUSTOMER_PROFANITY_TABLE_NAME="CustomerProfanityCounts"
 BAN_THRESHOLD_VALUE="3"
 
 # Define Lambda function names (ensure these match your setup_aws_lambdas.sh)
+FILE_SPLITTER_FUNCTION="review-file-splitter-dev" # NEW LAMBDA FUNCTION
 PREPROCESSING_FUNCTION="review-preprocessing-dev"
 PROFANITY_CHECK_FUNCTION="review-profanity-check-dev"
 SENTIMENT_ANALYSIS_FUNCTION="review-sentiment-analysis-dev"
@@ -48,21 +50,25 @@ SENTIMENT_ANALYSIS_FUNCTION="review-sentiment-analysis-dev"
 delete_s3_bucket() {
     local bucket_name=$1
     echo "   Attempting to delete bucket: $bucket_name..."
-    # Using 'awslocal s3api delete-bucket --bucket' for more explicit error handling
-    awslocal s3api delete-bucket --bucket "$bucket_name" 2>/dev/null && echo "   Bucket $bucket_name deleted." || echo "   Bucket $bucket_name did not exist or could not be deleted."
-    # Also attempt to delete all objects first for --force to work reliably
-    awslocal s3 rm "s3://$bucket_name" --recursive --exclude "*" 2>/dev/null || true # Delete objects, ignore if bucket doesn't exist
+    # First, try to delete bucket notification configuration explicitly
+    awslocal s3api delete-bucket-notification --bucket "$bucket_name" 2>/dev/null || true
+    sleep 1 # Short pause after deleting notification config
+
+    # Then, try to delete all objects in the bucket
+    awslocal s3 rm "s3://$bucket_name" --recursive 2>/dev/null || true # Ignore errors if bucket doesn't exist or is empty
+    # Finally, try to delete the bucket itself
     awslocal s3 rb "s3://$bucket_name" --force 2>/dev/null && echo "   Bucket $bucket_name deleted." || echo "   Bucket $bucket_name did not exist or could not be deleted."
 }
 
 # Delete existing buckets for a clean slate
 echo "Ensuring S3 buckets are clean..."
 delete_s3_bucket "$RAW_BUCKET"
+delete_s3_bucket "$SPLIT_BUCKET" # Delete new bucket
 delete_s3_bucket "$PROCESSED_BUCKET"
 delete_s3_bucket "$CLEAN_BUCKET"
 delete_s3_bucket "$FLAGGED_BUCKET"
 delete_s3_bucket "$FINAL_REVIEWS_BUCKET"
-sleep 3 # Give more time for buckets to be fully deleted before recreating
+sleep 7 # Give more time for buckets to be fully deleted before recreating
 
 # Helper function to create S3 bucket
 create_s3_bucket() {
@@ -73,22 +79,24 @@ create_s3_bucket() {
 
 # Create S3 buckets
 create_s3_bucket "$RAW_BUCKET"
+create_s3_bucket "$SPLIT_BUCKET" # Create new bucket
 create_s3_bucket "$PROCESSED_BUCKET"
 create_s3_bucket "$CLEAN_BUCKET"
 create_s3_bucket "$FLAGGED_BUCKET"
 create_s3_bucket "$FINAL_REVIEWS_BUCKET"
 echo "   All S3 buckets checked/created."
-sleep 3 # Give more time for S3 buckets to be fully propagated before attempting notification config or put-parameter
+sleep 7 # Give more time for S3 buckets to be fully propagated before attempting notification config or put-parameter
 
 # Register S3 bucket names in SSM Parameter Store
 echo "Registering S3 bucket names in SSM Parameter Store..."
 awslocal ssm put-parameter --name "/my-app/s3/raw_bucket_name" --value "$RAW_BUCKET" --type "String" --overwrite
+awslocal ssm put-parameter --name "/my-app/s3/split_bucket_name" --value "$SPLIT_BUCKET" --type "String" --overwrite # Register new bucket
 awslocal ssm put-parameter --name "/my-app/s3/processed_bucket_name" --value "$PROCESSED_BUCKET" --type "String" --overwrite
 awslocal ssm put-parameter --name "/my-app/s3/clean_bucket_name" --value "$CLEAN_BUCKET" --type "String" --overwrite
 awslocal ssm put-parameter --name "/my-app/s3/flagged_bucket_name" --value "$FLAGGED_BUCKET" --type "String" --overwrite
 awslocal ssm put-parameter --name "/my-app/s3/final_reviews_bucket_name" --value "$FINAL_REVIEWS_BUCKET" --type "String" --overwrite
 echo "   SSM parameters for S3 buckets created."
-sleep 2 # Small pause after SSM puts
+sleep 5 # Small pause after SSM puts
 
 # Create DynamoDB table
 echo "Creating DynamoDB table: $CUSTOMER_PROFANITY_TABLE_NAME..."
@@ -101,7 +109,7 @@ awslocal dynamodb create-table \
     --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
     2>/dev/null && echo "   DynamoDB table '$CUSTOMER_PROFANITY_TABLE_NAME' created." || echo "   DynamoDB table '$CUSTOMER_PROFANITY_TABLE_NAME' already exists or could not be created."
 echo "   DynamoDB table '$CUSTOMER_PROFANITY_TABLE_NAME' checked/created."
-sleep 2 # Small pause after DDB table creation
+sleep 5 # Small pause after DDB table creation
 
 # Create SSM Parameters for DynamoDB table and ban threshold
 echo "   Creating SSM Parameters for DynamoDB table and ban threshold..."
@@ -116,7 +124,7 @@ awslocal ssm put-parameter \
     --value "$BAN_THRESHOLD_VALUE" \
     --overwrite
 echo "   SSM parameters for DynamoDB and ban threshold created."
-sleep 2 # Small pause after SSM puts
+sleep 5 # Small pause after SSM puts
 
 echo ""
 echo "--- Section 2: EventBridge Setup for Lambda Triggers ---"
@@ -133,50 +141,37 @@ setup_s3_eventbridge_trigger() {
 
     # Delete existing rule to avoid conflicts and ensure fresh config
     awslocal events delete-rule --name "$trigger_name" 2>/dev/null && echo "      Existing rule $trigger_name deleted." || echo "      Rule $trigger_name did not exist."
-    sleep 2 # Give more time for rule deletion to propagate
+    sleep 3 # Give more time for rule deletion to propagate
 
-    # Enable EventBridge for the S3 bucket if not already enabled
-    # This must be done AFTER the bucket is guaranteed to exist
+    # IMPORTANT: Explicitly delete any existing bucket notification configuration first
+    # and then re-enable EventBridge notification configuration.
+    # This is often the key to forcing LocalStack to clear stale S3->EventBridge links.
+    echo "      Deleting existing notification configuration for bucket: $bucket_name..."
+    awslocal s3api delete-bucket-notification --bucket "$bucket_name" 2>/dev/null || true
+    sleep 2 # Short pause
+
     echo "      Enabling EventBridge for bucket: $bucket_name..."
     awslocal s3api put-bucket-notification-configuration \
         --bucket "$bucket_name" \
         --notification-configuration '{"EventBridgeConfiguration": {}}' \
-        || echo "      EventBridge already enabled for $bucket_name or error occurred."
-    sleep 2 # Give more time for notification configuration to propagate
+        || echo "      Error enabling EventBridge for $bucket_name."
+    sleep 5 # Give significant time for notification configuration to propagate
 
-    # Create event pattern file
-    local event_pattern_file="event-pattern-${lambda_function_name}.json"
-    cat > "$event_pattern_file" << EOF
-{
-  "source": [
-    "aws.s3"
-  ],
-  "detail-type": [
-    "Object Created"
-  ],
-  "detail": {
-    "bucket": {
-      "name": [
-        "${bucket_name}"
-      ]
-    }
-  }
-}
-EOF
+    # Event pattern as a JSON string
+    local event_pattern="{\"source\":[\"aws.s3\"],\"detail-type\":[\"Object Created\"],\"detail\":{\"bucket\":{\"name\":[\"${bucket_name}\"]}}}"
 
     # Create EventBridge rule
     echo "      Creating EventBridge rule: $trigger_name..."
     awslocal events put-rule \
         --name "$trigger_name" \
-        --event-pattern "file://$event_pattern_file" \
+        --event-pattern "$event_pattern" \
         --state ENABLED
-    sleep 2 # Give more time for rule creation to propagate
+    sleep 3 # Give more time for rule creation to propagate
 
-    # Get function ARN
+    # Get function ARN - add a sleep before this too
     echo "      Getting ARN for function: $lambda_function_name..."
+    sleep 3 # Give lambda service time to register function fully
     local function_arn
-    # Using 'awslocal lambda get-function' and 'jq' is the most reliable way.
-    # Check for jq presence first.
     if command -v jq &> /dev/null; then
         function_arn=$(awslocal lambda get-function --function-name "$lambda_function_name" | jq -r .Configuration.FunctionArn)
     else
@@ -195,63 +190,60 @@ EOF
     echo "      Adding Lambda function as target for rule: $trigger_name..."
     awslocal events put-targets \
         --rule "$trigger_name" \
-        --targets Id="${lambda_function_name}-target",Arn="$function_arn"
-    sleep 2 # Give more time for target creation to propagate
+        --targets "Id=${lambda_function_name}-target",Arn="$function_arn"
+    sleep 3 # Give more time for target creation to propagate
 
     # Add permission for EventBridge to invoke Lambda
     echo "      Adding Lambda permission for EventBridge to invoke $lambda_function_name..."
+    # Always try to remove and re-add permission to ensure it's clean and correct
+    awslocal lambda remove-permission \
+        --function-name "$lambda_function_name" \
+        --statement-id "eventbridge-invoke-${rule_name_prefix}-${bucket_name//-/_}" \
+        2>/dev/null || true # Ignore error if permission doesn't exist
+
     awslocal lambda add-permission \
         --function-name "$lambda_function_name" \
         --statement-id "eventbridge-invoke-${rule_name_prefix}-${bucket_name//-/_}" \
         --action lambda:InvokeFunction \
         --principal events.amazonaws.com \
         --source-arn "arn:aws:events:$region:000000000000:rule/$trigger_name" \
-        || echo "      Permission for $lambda_function_name from $trigger_name already exists or error occurred."
-    sleep 1 # Small pause after adding permission
+        || echo "      Error adding permission for $lambda_function_name from $trigger_name."
+    sleep 3 # Small pause after adding permission
 
     echo "   Successfully set up trigger for $lambda_function_name from $bucket_name"
-    rm -f "$event_pattern_file"
 }
 
 # --- Setup all triggers in sequence ---
 echo "   Setting up triggers for the processing pipeline..."
-# 1. raw-reviews-bucket -> Preprocessing Lambda
-setup_s3_eventbridge_trigger "$RAW_BUCKET" "$PREPROCESSING_FUNCTION" "s3-raw"
 
-# 2. processed-reviews-bucket -> Profanity Check Lambda
-setup_s3_eventbridge_trigger "$PROCESSED_BUCKET" "$PROFANITY_CHECK_FUNCTION" "s3-processed"
+# 1. raw-reviews-bucket -> File Splitter Lambda (NEW FIRST STAGE)
+setup_s3_eventbridge_trigger "$RAW_BUCKET" "$FILE_SPLITTER_FUNCTION" "s3-raw-to-splitter"
 
-# 3. clean-reviews-bucket -> Sentiment Analysis Lambda
-setup_s3_eventbridge_trigger "$CLEAN_BUCKET" "$SENTIMENT_ANALYSIS_FUNCTION" "s3-clean"
+# 2. split-reviews-bucket -> Preprocessing Lambda (UPDATED TRIGGER)
+setup_s3_eventbridge_trigger "$SPLIT_BUCKET" "$PREPROCESSING_FUNCTION" "s3-split-to-preprocessing"
 
-# 4. flagged-reviews-bucket -> Sentiment Analysis Lambda
-setup_s3_eventbridge_trigger "$FLAGGED_BUCKET" "$SENTIMENT_ANALYSIS_FUNCTION" "s3-flagged"
+# 3. processed-reviews-bucket -> Profanity Check Lambda
+setup_s3_eventbridge_trigger "$PROCESSED_BUCKET" "$PROFANITY_CHECK_FUNCTION" "s3-processed-to-profanity"
+
+# 4. clean-reviews-bucket -> Sentiment Analysis Lambda
+setup_s3_eventbridge_trigger "$CLEAN_BUCKET" "$SENTIMENT_ANALYSIS_FUNCTION" "s3-clean-to-sentiment"
+
+# 5. flagged-reviews-bucket -> Sentiment Analysis Lambda (Optional)
+setup_s3_eventbridge_trigger "$FLAGGED_BUCKET" "$SENTIMENT_ANALYSIS_FUNCTION" "s3-flagged-to-sentiment"
 echo "   All pipeline triggers configured."
 
-# echo ""
-# echo "--- Section 3: Testing Setup ---"
+# --- Verification Step: List and Describe Rules ---
+echo ""
+echo "--- Verifying EventBridge Rules ---"
+awslocal events list-rules --event-bus-name default
+echo ""
+awslocal events describe-rule --name "s3-raw-to-splitter-review-file-splitter-dev-trigger" 2>/dev/null || true
+awslocal events describe-rule --name "s3-split-to-preprocessing-review-preprocessing-dev-trigger" 2>/dev/null || true
+awslocal events describe-rule --name "s3-processed-to-profanity-review-profanity-check-dev-trigger" 2>/dev/null || true
+awslocal events describe-rule --name "s3-clean-to-sentiment-review-sentiment-analysis-dev-trigger" 2>/dev/null || true
+awslocal events describe-rule --name "s3-flagged-to-sentiment-review-sentiment-analysis-dev-trigger" 2>/dev/null || true
+echo "--- EventBridge Rule Verification Complete ---"
 
-# echo "   Uploading test files to $RAW_BUCKET to initiate the pipeline..."
-# # Test by uploading a clean and a profane file to S3 to trigger the chain
-echo '{"asin": "TEST12345", "reviewerID": "TESTER1", "reviewText": "This is a great product! I really enjoy it. No bad words here.", "summary": "Awesome!", "overall": 5}' > test-review-clean.json
-echo '{"asin": "TEST12346", "reviewerID": "TESTER2", "reviewText": "This product is a total scam and a rip-off. What a piece of garbage!", "summary": "Terrible!", "overall": 1}' > test-review-profane.json
-# echo '{"asin": "TEST12347", "reviewerID": "TESTER2", "reviewText": "Another awful product. This is truly worthless.", "summary": "Bad!", "overall": 2}' > test-review-profane-2.json
-# echo '{"asin": "TEST12348", "reviewerID": "TESTER2", "reviewText": "Just a bad experience, terrible.", "summary": "Ugh!", "overall": 1}' > test-review-profane-3.json
-# echo '{"asin": "TEST12349", "reviewerID": "TESTER2", "reviewText": "Seriously, this is a fraud. I am very angry.", "summary": "😡", "overall": 1}' > test-review-profane-4.json # Should trigger ban
-
-awslocal s3 cp test-review-clean.json s3://$RAW_BUCKET/test-review-clean.json
-awslocal s3 cp test-review-profane.json s3://$RAW_BUCKET/test-review-profane.json
-# awslocal s3 cp test-review-profane-2.json s3://$RAW_BUCKET/test-review-profane-2.json
-# awslocal s3 cp test-review-profane-3.json s3://$RAW_BUCKET/test-review-profane-3.json
-# awslocal s3 cp test-review-profane-4.json s3://$RAW_BUCKET/test-review-profane-4.json
-
-# echo "   Test files uploaded to $RAW_BUCKET. The processing pipeline should now be active."
-# echo "   Monitor LocalStack logs for Lambda execution (e.g., 'localstack logs -f')."
-# echo "   Check S3 buckets ($PROCESSED_BUCKET, $CLEAN_BUCKET, $FLAGGED_BUCKET, $FINAL_REVIEWS_BUCKET) and DynamoDB table ($CUSTOMER_PROFANITY_TABLE_NAME) for results."
-
-# Clean up local test files
-# sleep 5 # Give some time for initial triggers to fire
-rm -f test-review-clean.json test-review-profane.json test-review-profane-2.json test-review-profane-3.json test-review-profane-4.json
 
 echo ""
 echo "==================================================="
@@ -260,10 +252,10 @@ echo "==================================================="
 echo ""
 echo "Summary of Setup:"
 echo "-----------------"
-echo "- All S3 buckets created: $RAW_BUCKET, $PROCESSED_BUCKET, $CLEAN_BUCKET, $FLAGGED_BUCKET, $FINAL_REVIEWS_BUCKET."
+echo "- All S3 buckets created: $RAW_BUCKET, $SPLIT_BUCKET, $PROCESSED_BUCKET, $CLEAN_BUCKET, $FLAGGED_BUCKET, $FINAL_REVIEWS_BUCKET."
 echo "- DynamoDB table created: $CUSTOMER_PROFANITY_TABLE_NAME."
 echo "- All necessary SSM parameters set for buckets, DynamoDB, and ban threshold."
-echo "- EventBridge triggers configured to chain Lambdas."
+echo "- EventBridge triggers configured to chain Lambdas (now including file splitter)."
 echo ""
 echo "Important Next Step:"
 echo "--------------------"

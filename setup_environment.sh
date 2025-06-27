@@ -151,6 +151,12 @@ fi
 
 echo "   Dependencies installed successfully"
 
+export LOCALSTACK_HEAP_SIZE=2g
+export LAMBDA_EXECUTOR=docker-reuse
+export LAMBDA_REMOVE_CONTAINERS=false
+export LAMBDA_CONTAINER_POOLS=true
+export MAIN_CONTAINER_NAME=localstack-main # Important for LAMBDA_CONTAINER_POOLS=true
+
 # Test LocalStack installation
 echo "   Testing LocalStack installation..."
 if command -v localstack &> /dev/null; then

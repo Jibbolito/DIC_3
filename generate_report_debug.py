@@ -16,6 +16,7 @@ def generate_review_report():
 
     # --- Define All Resource Names (from setup_eventbridge.sh and common naming) ---
     RAW_BUCKET = "raw-reviews-bucket"
+    SPLIT_BUCKET = "split-reviews-bucket"
     PROCESSED_BUCKET = "processed-reviews-bucket"
     CLEAN_BUCKET = "clean-reviews-bucket"
     FLAGGED_BUCKET = "flagged-reviews-bucket"
@@ -48,6 +49,7 @@ def generate_review_report():
 
     report_data = {
         "s3_raw_bucket_count": 0,
+        "s3_split_bucket_count": 0,
         "s3_processed_bucket_count": 0,
         "s3_clean_bucket_count": 0,
         "s3_flagged_bucket_count": 0,
@@ -90,6 +92,7 @@ def generate_review_report():
 
     # --- 2. Count Reviews in Each S3 Bucket ---
     report_data["s3_raw_bucket_count"] = count_s3_objects(RAW_BUCKET)
+    report_data["s3_split_bucket_count"] = count_s3_objects(SPLIT_BUCKET)
     report_data["s3_processed_bucket_count"] = count_s3_objects(PROCESSED_BUCKET)
     report_data["s3_clean_bucket_count"] = count_s3_objects(CLEAN_BUCKET)
     report_data["s3_flagged_bucket_count"] = count_s3_objects(FLAGGED_BUCKET)
@@ -99,40 +102,40 @@ def generate_review_report():
 
     # --- 3. Process Sentiment Counts (from Final Reviews Bucket) ---
     # This loop also doubles as the source for `total_reviews_processed_to_final`
-    print(f"Analyzing sentiment from '{FINAL_REVIEWS_BUCKET}' for detailed breakdown...")
-    try:
-        paginator = s3_client.get_paginator('list_objects_v2')
-        pages = paginator.paginate(Bucket=FINAL_REVIEWS_BUCKET)
-        for page in pages:
-            if 'Contents' in page:
-                for obj in page['Contents']:
-                    try:
-                        # Get object content
-                        response = s3_client.get_object(Bucket=FINAL_REVIEWS_BUCKET, Key=obj['Key'])
-                        review_content = response['Body'].read().decode('utf-8')
-                        review_json = json.loads(review_content)
+    # print(f"Analyzing sentiment from '{FINAL_REVIEWS_BUCKET}' for detailed breakdown...")
+    # try:
+    #     paginator = s3_client.get_paginator('list_objects_v2')
+    #     pages = paginator.paginate(Bucket=FINAL_REVIEWS_BUCKET)
+    #     for page in pages:
+    #         if 'Contents' in page:
+    #             for obj in page['Contents']:
+    #                 try:
+    #                     # Get object content
+    #                     response = s3_client.get_object(Bucket=FINAL_REVIEWS_BUCKET, Key=obj['Key'])
+    #                     review_content = response['Body'].read().decode('utf-8')
+    #                     review_json = json.loads(review_content)
 
-                        # Assuming your sentiment analysis Lambda adds a 'sentiment_analysis' field
-                        sentiment_label = review_json.get('sentiment_analysis', {}).get('sentiment_label')
+    #                     # Assuming your sentiment analysis Lambda adds a 'sentiment_analysis' field
+    #                     sentiment_label = review_json.get('sentiment_analysis', {}).get('sentiment_label')
                         
-                        if sentiment_label == 'positive':
-                            report_data["positive_reviews_final"] += 1
-                        elif sentiment_label == 'neutral':
-                            report_data["neutral_reviews_final"] += 1
-                        elif sentiment_label == 'negative':
-                            report_data["negative_reviews_final"] += 1
-                        # If sentiment is missing or unexpected, it won't be counted in these categories
-                        # but still contributes to total_reviews_processed_to_final.
+    #                     if sentiment_label == 'positive':
+    #                         report_data["positive_reviews_final"] += 1
+    #                     elif sentiment_label == 'neutral':
+    #                         report_data["neutral_reviews_final"] += 1
+    #                     elif sentiment_label == 'negative':
+    #                         report_data["negative_reviews_final"] += 1
+    #                     # If sentiment is missing or unexpected, it won't be counted in these categories
+    #                     # but still contributes to total_reviews_processed_to_final.
 
-                    except json.JSONDecodeError:
-                        print(f"Warning: Could not decode JSON for {obj['Key']} in {FINAL_REVIEWS_BUCKET}. Skipping detailed sentiment analysis for this file.")
-                    except Exception as e:
-                        print(f"Warning: Error processing {obj['Key']} in {FINAL_REVIEWS_BUCKET}: {e}")
-        # The total count for final reviews bucket is already in s3_final_reviews_bucket_count
-        report_data["total_reviews_processed_to_final"] = report_data["s3_final_reviews_bucket_count"]
-        print(f"Detailed sentiment analysis completed for {report_data['total_reviews_processed_to_final']} reviews from '{FINAL_REVIEWS_BUCKET}'")
-    except Exception as e:
-        print(f"Error accessing '{FINAL_REVIEWS_BUCKET}' for detailed sentiment analysis: {e}")
+    #                 except json.JSONDecodeError:
+    #                     print(f"Warning: Could not decode JSON for {obj['Key']} in {FINAL_REVIEWS_BUCKET}. Skipping detailed sentiment analysis for this file.")
+    #                 except Exception as e:
+    #                     print(f"Warning: Error processing {obj['Key']} in {FINAL_REVIEWS_BUCKET}: {e}")
+    #     # The total count for final reviews bucket is already in s3_final_reviews_bucket_count
+    #     report_data["total_reviews_processed_to_final"] = report_data["s3_final_reviews_bucket_count"]
+    #     print(f"Detailed sentiment analysis completed for {report_data['total_reviews_processed_to_final']} reviews from '{FINAL_REVIEWS_BUCKET}'")
+    # except Exception as e:
+    #     print(f"Error accessing '{FINAL_REVIEWS_BUCKET}' for detailed sentiment analysis: {e}")
 
     # --- 4. Get Banned Users and Total DynamoDB Items ---
     print(f"Scanning DynamoDB table '{CUSTOMER_PROFANITY_TABLE_NAME}'...")
