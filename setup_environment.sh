@@ -11,7 +11,7 @@ echo "Setting up Assignment 3 Environment..."
 echo "   Checking Python version..."
 PYTHON_VERSION=$(python --version 2>&1 | awk '{print $2}')
 REQUIRED_MAJOR=3
-REQUIRED_MINOR=9
+REQUIRED_MINOR=12
 
 # Extract major and minor version numbers
 MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
@@ -119,6 +119,25 @@ pip install -U regex
 
 echo "   Dependencies installed successfully"
 
+# Download nltk data for preprocessing if not already present
+if [ ! -d "src/lambda_functions/preprocessing/nltk_data" ]; then
+    echo "   Downloading NLTK data..."
+    python -m nltk.downloader -d ./src/lambda_functions/preprocessing/nltk_data punkt_tab punkt stopwords wordnet averaged_perceptron_tagger
+    echo "   NLTK data downloaded successfully"
+    echo "   Please remove non english data from it"
+else
+    echo "   NLTK data already present, skipping download"
+fi
+
+# Download nltk data for sentiment analysis if not already present
+if [ ! -d "src/lambda_functions/sentiment_analysis/nltk_data" ]; then
+    echo "   Downloading NLTK data for sentiment analysis..."
+    python -m nltk.downloader -d ./src/lambda_functions/sentiment_analysis/nltk_data vader_lexicon
+    echo "   NLTK data for sentiment analysis downloaded successfully"
+else
+    echo "   NLTK data for sentiment analysis already present, skipping download"
+fi
+
 # Test LocalStack installation
 echo "   Testing LocalStack installation..."
 if command -v localstack &> /dev/null; then
@@ -128,6 +147,8 @@ else
     echo "   Please check the error messages above"
     exit 1
 fi
+
+export LAMBDA_RUNTIME_ENVIRONMENT_TIMEOUT=600
 
 # Start LocalStack
 echo "   Starting LocalStack..."

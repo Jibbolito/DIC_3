@@ -5,6 +5,8 @@ import os
 import nltk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
+nltk.data.path.append(os.path.join(os.path.dirname(__file__), 'nltk_data'))
+
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -13,15 +15,6 @@ logger.setLevel(logging.INFO)
 s3_client = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb', endpoint_url=os.environ.get('AWS_ENDPOINT_URL')) # Use endpoint_url for LocalStack
 ssm_client = boto3.client('ssm', endpoint_url=os.environ.get('AWS_ENDPOINT_URL')) # Use endpoint_url for LocalStack
-
-
-# Download NLTK data (for VADER sentiment analysis)
-# This part is crucial for Lambda cold starts. Ensure these are downloaded to /tmp if packaging.
-try:
-    nltk.data.find('sentiment/vader_lexicon')
-except LookupError:
-    nltk.download('vader_lexicon', download_dir='/tmp')
-    nltk.data.path.append('/tmp') # Add /tmp to NLTK data path
 
 # Initialize VADER sentiment analyzer
 analyzer = SentimentIntensityAnalyzer()

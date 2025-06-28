@@ -18,18 +18,12 @@ ssm_client = boto3.client('ssm', endpoint_url=os.environ.get('AWS_ENDPOINT_URL')
 
 
 # Initialize profanity filter
-pf = ProfanityFilter()
-
-# Additional custom profanity words for enhanced detection
 CUSTOM_PROFANITY_WORDS = {
     'scam', 'fake', 'fraud', 'ripoff', 'rip-off', 'con', 
     'cheat', 'steal', 'stealing', 'robbed', 'robbery',
     'garbage', 'trash', 'worthless', 'pathetic', 'useless'
 }
-
-# Add custom words to the filter
-for word in CUSTOM_PROFANITY_WORDS:
-    pf.add_word(word)
+pf = ProfanityFilter(extra_censor_list=list(CUSTOM_PROFANITY_WORDS))
 
 def get_parameter(name):
     """Retrieves a parameter from AWS SSM Parameter Store."""
@@ -139,6 +133,7 @@ def lambda_handler(event, context):
         response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
         review_data = json.loads(response['Body'].read().decode('utf-8'))
         
+        
         # Perform profanity check on processed text fields
         summary_check = check_profanity_in_text(review_data.get('processed_summary', ''))
         reviewtext_check = check_profanity_in_text(review_data.get('processed_reviewText', ''))
@@ -199,7 +194,7 @@ def lambda_handler(event, context):
                     },
                     ReturnValues='UPDATED_NEW'
                 )
-                current_profanity_count = response['Attributes'].get('profanity_count', 0)
+                current_profanity_count = int(response['Attributes'].get('profanity_count', 0))
                 logger.info(f"Reviewer '{reviewer_id}' profanity count updated to: {current_profanity_count}")
 
                 # Check for banning

@@ -15,11 +15,12 @@ export AWS_ENDPOINT_URL="http://localhost:4566"
 # Zip File: deployments/preprocessing_deployment.zip
 aws lambda create-function \
     --function-name review-preprocessing-dev \
-    --runtime python3.9 \
+    --runtime python3.12 \
     --zip-file fileb://deployments/preprocessing_deployment.zip \
     --handler lambda_function.lambda_handler \
     --role arn:aws:iam::000000000000:role/lambda-role \
     --environment Variables="{AWS_ENDPOINT_URL=http://host.docker.internal:4566}" \
+    --memory-size 1024 \
     --timeout 30 \
     --endpoint-url=http://localhost:4566
 
@@ -29,11 +30,12 @@ aws lambda create-function \
 # Zip File: deployments/profanity_check_deployment.zip
 aws lambda create-function \
     --function-name review-profanity-check-dev \
-    --runtime python3.9 \
+    --runtime python3.12 \
     --zip-file fileb://deployments/profanity_check_deployment.zip \
     --handler lambda_function.lambda_handler \
     --role arn:aws:iam::000000000000:role/lambda-role \
     --environment Variables="{AWS_ENDPOINT_URL=http://host.docker.internal:4566}" \
+    --memory-size 1024 \
     --timeout 30 \
     --endpoint-url=http://localhost:4566
 
@@ -43,15 +45,16 @@ aws lambda create-function \
 # Zip File: deployments/sentiment_analysis_deployment.zip
 aws lambda create-function \
     --function-name review-sentiment-analysis-dev \
-    --runtime python3.9 \
+    --runtime python3.12 \
     --zip-file fileb://deployments/sentiment_analysis_deployment.zip \
     --handler lambda_function.lambda_handler \
     --role arn:aws:iam::000000000000:role/lambda-role \
     --environment Variables="{AWS_ENDPOINT_URL=http://host.docker.internal:4566}" \
+    --memory-size 1024 \
     --timeout 30 \
     --endpoint-url=http://localhost:4566
 
 echo "==================================================="
-echo " Lambda Functions Deletion Completed!            "
+echo " Lambda Functions Creation Completed!            "
 echo "==================================================="
 echo ""

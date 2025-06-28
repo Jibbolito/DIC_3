@@ -10,7 +10,7 @@ import subprocess
 import sys
 
 # Constants
-PYTHON_VERSION = '3.9'  # Adjust as needed for your Lambda runtime
+PYTHON_VERSION = '3.12'  # Adjust as needed for your Lambda runtime
 
 def package_lambda(function_name, function_dir):
     """Package a Lambda function with its dependencies"""
@@ -36,12 +36,14 @@ def package_lambda(function_name, function_dir):
             print(f"     Installing dependencies for {function_name} (forcing source build for compatibility)...")
             subprocess.run([
                 sys.executable, '-m', 'pip', 'install',
-                '--platform', 'linux_x86_64',  # Adjust as needed
+                '--platform', 'manylinux2014_x86_64',  # Adjust as needed
                 '-r', requirements_file,
                 '-t', temp_function_path,
                 '--quiet',
-                '--no-deps',
-                # '--only-binary=:all:',
+                '--force-reinstall', 
+                '--no-cache-dir',
+                '--only-binary=:all:',
+                '--upgrade',
             ], check=True)
 
             print(f"     Dependencies for {function_name} installed.")
