@@ -25,39 +25,55 @@ def upload_reviews_to_s3(file_path, bucket_name, aws_endpoint_url=None, upload_d
 
     try:
         with open(file_path, 'r') as f:
+            batch = []
+            batch_start_line = 1
             for line_num, line in enumerate(f, 1):
                 try:
                     review_data = json.loads(line.strip())
-
-                    # Use 'review_id' if available, otherwise generate a unique ID
-                    # or use 'asin' (Amazon Standard Identification Number) and 'reviewerID' for uniqueness
-                    if 'review_id' in review_data:
-                        object_key = f"clean/{review_data['review_id']}.json"
-                    elif 'asin' in review_data and 'reviewerID' in review_data:
-                        # Create a more robust key using both ASIN and reviewerID
-                        object_key = f"clean/{review_data['asin']}_{review_data['reviewerID']}_{uuid.uuid4()}.json"
-                    else:
-                        object_key = f"clean/review_{uuid.uuid4()}.json" # Fallback to a truly unique ID
-
-                    s3_client.put_object(
-                        Bucket=bucket_name,
-                        Key=object_key,
-                        Body=json.dumps(review_data),
-                        ContentType='application/json'
-                    )
-                    processed_count += 1
-                    if processed_count % 1000 == 0:
-                        print(f"  Uploaded {processed_count} reviews so far...")
-                    
-                    if upload_delay_seconds > 0:
-                        time.sleep(upload_delay_seconds)
-
+                    batch.append(review_data)
                 except json.JSONDecodeError as e:
                     print(f"Error decoding JSON on line {line_num}: {e}. Skipping line: {line.strip()[:100]}...")
                     failed_count += 1
+                    continue
+
+                # When batch reaches 25pyth or it's the last line, upload
+                if len(batch) == 25:
+                    object_key = f"clean/batch_{batch_start_line}_{line_num}.jsonl"
+                    try:
+                        # Convert batch to JSONL (one JSON object per line)
+                        jsonl_data = '\n'.join(json.dumps(obj) for obj in batch)
+                        s3_client.put_object(
+                            Bucket=bucket_name,
+                            Key=object_key,
+                            Body=jsonl_data,
+                            ContentType='application/json'
+                        )
+                        processed_count += len(batch)
+                        if processed_count % 1000 == 0:
+                            print(f"  Uploaded {processed_count} reviews so far...")
+                        if upload_delay_seconds > 0:
+                            time.sleep(upload_delay_seconds)
+                    except Exception as e:
+                        print(f"Error uploading batch starting at line {batch_start_line}: {e}. Skipping batch.")
+                        failed_count += len(batch)
+                    batch = []
+                    batch_start_line = line_num + 1
+
+            # Upload any remaining reviews in the last batch
+            if batch:
+                object_key = f"clean/batch_{batch_start_line}_{line_num}.jsonl"
+                try:
+                    jsonl_data = '\n'.join(json.dumps(obj) for obj in batch)
+                    s3_client.put_object(
+                        Bucket=bucket_name,
+                        Key=object_key,
+                        Body=jsonl_data,
+                        ContentType='application/json'
+                    )
+                    processed_count += len(batch)
                 except Exception as e:
-                    print(f"Error uploading object for line {line_num}: {e}. Skipping line.")
-                    failed_count += 1
+                    print(f"Error uploading final batch starting at line {batch_start_line}: {e}. Skipping batch.")
+                    failed_count += len(batch)
 
         print("\n--- Upload Summary ---")
         print(f"Total reviews processed for upload: {processed_count}")
@@ -80,7 +96,7 @@ if __name__ == "__main__":
     # If you are using real AWS, keep it commented out.
     AWS_LOCALSTACK_ENDPOINT = 'http://localhost:4566'
 
-    UPLOAD_DELAY_SECONDS = 0.5
+    UPLOAD_DELAY_SECONDS = 2
 
     # Ensure the 'data' directory exists
     os.makedirs(os.path.dirname(FILE_PATH), exist_ok=True)

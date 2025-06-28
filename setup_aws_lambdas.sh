@@ -20,7 +20,7 @@ aws lambda create-function \
     --handler lambda_function.lambda_handler \
     --role arn:aws:iam::000000000000:role/lambda-role \
     --environment Variables="{AWS_ENDPOINT_URL=http://host.docker.internal:4566}" \
-    --memory-size 1024 \
+    --memory-size 2048 \
     --timeout 30 \
     --endpoint-url=http://localhost:4566
 

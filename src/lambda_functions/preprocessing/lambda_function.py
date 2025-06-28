@@ -70,7 +70,7 @@ def process_single_review(review_data: dict, original_object_key: str) -> dict:
     Helper function to perform preprocessing on a single review dictionary.
     """
     processed_review = {
-        'review_id': review_data.get('asin', 'unknown'), # 'asin' is often used as product ID, can be review ID
+        'review_id': review_data.get('asin', 'unknown') + review_data.get('reviewerID', 'unknown'), # 'asin' is often used as product ID, can be review ID
         'reviewer_id': review_data.get('reviewerID', 'unknown'),
         'reviewer_name': review_data.get('reviewerName', ''),
         'overall_rating': review_data.get('overall', 0),

@@ -140,7 +140,7 @@ def generate_review_report():
 
         for item in response.get('Items', []):
             reviewer_id = item.get('reviewer_id', {}).get('S')
-            profanity_count_str = item.get('profanity_count', {}).get('N', '0') # Get as string
+            profanity_count_str = item.get('profanity_review_count', {}).get('N', '0') # Get as string
             
             # Convert to int, handle potential errors if 'N' isn't clean
             try:
@@ -166,7 +166,7 @@ def generate_review_report():
         print(f"Error accessing DynamoDB table '{CUSTOMER_PROFANITY_TABLE_NAME}': {e}")
 
     # --- Save the report to a JSON file ---
-    output_filename = "review_pipeline_report.json"
+    output_filename = "review_pipeline_report_batch.json"
     with open(output_filename, 'w') as f:
         json.dump(report_data, f, indent=2)
 

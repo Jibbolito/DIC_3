@@ -1,9 +1,10 @@
 import json
 import boto3
 import logging
-import re
-from typing import Dict
 import os
+import traceback # Import traceback
+import uuid # Required for generating UUIDs if review_id is missing
+from typing import Dict, Any
 from profanityfilter import ProfanityFilter
 
 # Configure logging
@@ -16,40 +17,43 @@ s3_client = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb', endpoint_url=os.environ.get('AWS_ENDPOINT_URL'))
 ssm_client = boto3.client('ssm', endpoint_url=os.environ.get('AWS_ENDPOINT_URL'))
 
+pf = ProfanityFilter()
 
-# Initialize profanity filter
-CUSTOM_PROFANITY_WORDS = {
-    'scam', 'fake', 'fraud', 'ripoff', 'rip-off', 'con', 
-    'cheat', 'steal', 'stealing', 'robbed', 'robbery',
-    'garbage', 'trash', 'worthless', 'pathetic', 'useless'
-}
-pf = ProfanityFilter(extra_censor_list=list(CUSTOM_PROFANITY_WORDS))
+# Configuration variables, initialized to None and loaded once
+FLAGGED_BUCKET = None
+CLEAN_BUCKET = None
+CUSTOMER_PROFANITY_TABLE_NAME = None
+BAN_THRESHOLD = None
+customer_profanity_table = None
+_config_loaded = False
 
-def get_parameter(name):
-    """Retrieves a parameter from AWS SSM Parameter Store."""
+def load_config():
+    """Loads configuration from SSM Parameter Store."""
+    global FLAGGED_BUCKET, CLEAN_BUCKET, CUSTOMER_PROFANITY_TABLE_NAME, BAN_THRESHOLD, customer_profanity_table, _config_loaded
+    if _config_loaded:
+        return
+
     try:
-        response = ssm_client.get_parameter(Name=name, WithDecryption=True)
-        return response['Parameter']['Value']
+        FLAGGED_BUCKET = ssm_client.get_parameter(Name='/my-app/s3/flagged_bucket_name', WithDecryption=True)['Parameter']['Value']
+        CLEAN_BUCKET = ssm_client.get_parameter(Name='/my-app/s3/clean_bucket_name', WithDecryption=True)['Parameter']['Value']
+        CUSTOMER_PROFANITY_TABLE_NAME = ssm_client.get_parameter(Name='/my-app/dynamodb/customer_profanity_table_name', WithDecryption=True)['Parameter']['Value']
+        BAN_THRESHOLD = int(ssm_client.get_parameter(Name='/my-app/ban_threshold', WithDecryption=True)['Parameter']['Value'])
+        
+        customer_profanity_table = dynamodb.Table(CUSTOMER_PROFANITY_TABLE_NAME)
+        _config_loaded = True
+        logger.info("Configuration loaded from SSM.")
+    except ssm_client.exceptions.ParameterNotFound as e:
+        logger.error(f"Required SSM parameter not found: {e}. Falling back to defaults.")
+        # Fallback for local testing/dev if SSM not setup
+        FLAGGED_BUCKET = 'flagged-reviews-bucket'
+        CLEAN_BUCKET = 'clean-reviews-bucket'
+        CUSTOMER_PROFANITY_TABLE_NAME = 'CustomerProfanityCounts'
+        BAN_THRESHOLD = 3 # Default ban threshold set to 3 for explicit ban on 3rd review
+        customer_profanity_table = dynamodb.Table(CUSTOMER_PROFANITY_TABLE_NAME)
+        _config_loaded = True
     except Exception as e:
-        logger.error(f"Error retrieving SSM parameter {name}: {e}")
-        raise
-
-# Retrieve bucket and table names from SSM Parameter Store at cold start
-try:
-    FLAGGED_BUCKET = get_parameter('/my-app/s3/flagged_bucket_name')
-    CLEAN_BUCKET = get_parameter('/my-app/s3/clean_bucket_name')
-    CUSTOMER_PROFANITY_TABLE_NAME = get_parameter('/my-app/dynamodb/customer_profanity_table_name')
-    BAN_THRESHOLD = int(get_parameter('/my-app/ban_threshold')) # Get ban threshold from SSM
-except Exception as e:
-    logger.error(f"Failed to load SSM parameters at initialization: {e}")
-    # Fallback for local testing if SSM not setup
-    FLAGGED_BUCKET = 'flagged-reviews-bucket'
-    CLEAN_BUCKET = 'clean-reviews-bucket'
-    CUSTOMER_PROFANITY_TABLE_NAME = 'CustomerProfanityCounts'
-    BAN_THRESHOLD = 3 # Default ban threshold
-
-# Get the DynamoDB table instance
-customer_profanity_table = dynamodb.Table(CUSTOMER_PROFANITY_TABLE_NAME)
+        logger.critical(f"Failed to load SSM parameters at initialization: {e}. Lambda cannot proceed. Stack trace: {traceback.format_exc()}")
+        raise # Re-raise if critical configuration cannot be loaded
 
 def check_profanity_in_text(text: str) -> Dict:
     """
@@ -64,9 +68,6 @@ def check_profanity_in_text(text: str) -> Dict:
     if not text or not isinstance(text, str):
         return {
             'contains_profanity': False,
-            'profanity_words': [],
-            'profanity_count': 0,
-            'severity_score': 0,
             'censored_text': ''
         }
     
@@ -74,131 +75,115 @@ def check_profanity_in_text(text: str) -> Dict:
     contains_profanity = pf.is_profane(text)
     censored_text = pf.censor(text)
     
-    # Extract profanity words by comparing original with censored
-    profanity_words = []
-    if contains_profanity:
-        # Simple extraction by finding words that got censored
-        original_words = text.lower().split()
-        censored_words = censored_text.lower().split()
-        
-        for orig, cens in zip(original_words, censored_words):
-            if orig != cens and '*' in cens:
-                # Clean the original word of punctuation for detection
-                clean_orig = re.sub(r'[^\w]', '', orig)
-                if clean_orig:
-                    profanity_words.append(clean_orig)
-    
-    # Calculate severity score based on profanity count and context
-    severity_score = 0
-    if contains_profanity:
-        severity_score = len(profanity_words) * 2  # Base score
-        
-        # Add extra points for high-severity indicators
-        text_lower = text.lower()
-        high_severity_patterns = ['fuck', 'shit', 'bitch', 'damn']
-        for pattern in high_severity_patterns:
-            if pattern in text_lower:
-                severity_score += 3
-    
     return {
         'contains_profanity': contains_profanity,
-        'profanity_words': list(set(profanity_words)),
-        'profanity_count': len(set(profanity_words)),
-        'severity_score': severity_score,
         'censored_text': censored_text
     }
 
+def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    global _config_loaded # Ensure _config_loaded is updated correctly if needed
 
-def lambda_handler(event, context):
-    """
-    AWS Lambda handler for profanity checking
-    
-    Args:
-        event: S3 event trigger from processed reviews
-        context: Lambda context
-        
-    Returns:
-        dict: Response with profanity analysis results
-    """
     try:
+        if not _config_loaded:
+            load_config() # Load config on first invocation (or cold start)
+
         logger.info(f"Profanity check Lambda triggered with event: {json.dumps(event)}")
-        
+
         # Get bucket and object information from S3 event
-        bucket_name = event['Records'][0]['s3']['bucket']['name']
-        object_key = event['Records'][0]['s3']['object']['key']
-        
+        try:
+            bucket_name = event['Records'][0]['s3']['bucket']['name']
+            object_key = event['Records'][0]['s3']['object']['key']
+        except (KeyError, IndexError) as e:
+            logger.error(f"Invalid S3 event structure: {e}. Event: {json.dumps(event)}")
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Invalid S3 event structure'})
+            }
+
         logger.info(f"Processing file: {object_key} from bucket: {bucket_name}")
-        
+
         # Download the processed review from S3
-        response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
-        review_data = json.loads(response['Body'].read().decode('utf-8'))
-        
-        
+        review_data = {}
+        try:
+            response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
+            review_data = json.loads(response['Body'].read().decode('utf-8'))
+        except s3_client.exceptions.NoSuchKey:
+            logger.warning(f"Object {object_key} not found in bucket {bucket_name}. Skipping.")
+            return {
+                'statusCode': 200,
+                'body': json.dumps({'message': f"Object {object_key} not found, skipped."})
+            }
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to decode JSON from S3 object {object_key}: {e}. Content might be malformed. Stack trace: {traceback.format_exc()}")
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': f"Malformed JSON in {object_key}"})
+            }
+        except Exception as e:
+            logger.error(f"Error downloading or parsing S3 object {object_key}: {e}. Stack trace: {traceback.format_exc()}")
+            return {
+                'statusCode': 500,
+                'body': json.dumps({'error': 'Failed to retrieve or parse review data from S3'})
+            }
+
+        # Validate reviewer_id and review_id early
+        reviewer_id = review_data.get('reviewer_id')
+        review_id = review_data.get('review_id')
+
+        if not reviewer_id:
+            logger.warning(f"Missing 'reviewer_id' in review data for object {object_key}. Skipping processing for this review.")
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Missing reviewer_id in review data'})
+            }
+        if not review_id:
+            logger.warning(f"Missing 'review_id' in review data for object {object_key}. Generating a UUID for S3 key.")
+            review_id = str(uuid.uuid4()) # Generating UUID for review_id if missing
+
         # Perform profanity check on processed text fields
         summary_check = check_profanity_in_text(review_data.get('processed_summary', ''))
         reviewtext_check = check_profanity_in_text(review_data.get('processed_reviewText', ''))
         overall_check = check_profanity_in_text(review_data.get('processed_overall', ''))
-        
-        # Aggregate profanity results
-        total_profanity_count = (
-            summary_check['profanity_count'] + 
-            reviewtext_check['profanity_count'] + 
-            overall_check['profanity_count']
-        )
-        
-        total_severity_score = (
-            summary_check['severity_score'] + 
-            reviewtext_check['severity_score'] + 
-            overall_check['severity_score']
-        )
-        
+
         contains_profanity = (
-            summary_check['contains_profanity'] or 
-            reviewtext_check['contains_profanity'] or 
+            summary_check['contains_profanity'] or
+            reviewtext_check['contains_profanity'] or
             overall_check['contains_profanity']
         )
-        
-        all_profanity_words = (
-            summary_check['profanity_words'] + 
-            reviewtext_check['profanity_words'] + 
-            overall_check['profanity_words']
-        )
-        
+
         # Update review data with profanity analysis
         review_data.update({
             'processing_stage': 'profanity_checked',
             'profanity_analysis': {
                 'contains_profanity': contains_profanity,
-                'total_profanity_count': total_profanity_count,
-                'total_severity_score': total_severity_score,
-                'profanity_words': list(set(all_profanity_words)),
                 'summary_profanity': summary_check,
                 'reviewtext_profanity': reviewtext_check,
                 'overall_profanity': overall_check
             }
         })
-        
-        # --- Profanity Count and Banning Logic ---
-        reviewer_id = review_data.get('reviewer_id', 'unknown')
+
+        # --- Profanity Review Count and Banning Logic ---
         is_banned = False
+        current_profanity_review_count = 0
 
         if contains_profanity:
             try:
-                # Increment profanity count in DynamoDB
+                # Increment profanity review count in DynamoDB
                 response = customer_profanity_table.update_item(
                     Key={'reviewer_id': reviewer_id},
-                    UpdateExpression='SET profanity_count = if_not_exists(profanity_count, :start) + :inc',
+                    UpdateExpression='SET profanity_review_count = if_not_exists(profanity_review_count, :start) + :inc',
                     ExpressionAttributeValues={
                         ':start': 0,
                         ':inc': 1
                     },
                     ReturnValues='UPDATED_NEW'
                 )
-                current_profanity_count = int(response['Attributes'].get('profanity_count', 0))
-                logger.info(f"Reviewer '{reviewer_id}' profanity count updated to: {current_profanity_count}")
+                current_profanity_review_count = int(response['Attributes'].get('profanity_review_count', 0))
+                logger.info(f"Reviewer '{reviewer_id}' profanity review count updated to: {current_profanity_review_count}")
 
-                # Check for banning
-                if current_profanity_count > BAN_THRESHOLD:
+                # Check for banning: Ban happens when the profanity review count is
+                # equal to or exceeds the BAN_THRESHOLD.
+                if current_profanity_review_count >= BAN_THRESHOLD:
                     customer_profanity_table.update_item(
                         Key={'reviewer_id': reviewer_id},
                         UpdateExpression='SET is_banned = :val',
@@ -207,52 +192,59 @@ def lambda_handler(event, context):
                         }
                     )
                     is_banned = True
-                    logger.warning(f"Reviewer '{reviewer_id}' has been banned due to excessive profanity ({current_profanity_count} reviews).")
+                    logger.warning(f"Reviewer '{reviewer_id}' has been banned due to excessive profane reviews ({current_profanity_review_count}).")
+            except dynamodb.meta.client.exceptions.ProvisionedThroughputExceededException as ddb_e:
+                 logger.error(f"DynamoDB throughput exceeded for reviewer '{reviewer_id}': {str(ddb_e)}. Stack trace: {traceback.format_exc()}")
+                 # In a production scenario, consider implementing retry logic or sending to a DLQ here.
             except Exception as ddb_e:
-                logger.error(f"Error updating DynamoDB for reviewer '{reviewer_id}': {str(ddb_e)}")
-                # Continue processing to S3 even if DynamoDB update fails
-        
+                logger.error(f"Unexpected error updating DynamoDB for reviewer '{reviewer_id}': {str(ddb_e)}. Stack trace: {traceback.format_exc()}")
+                # Decide if this should halt processing or just log. For now, continuing.
+
         review_data['profanity_analysis']['reviewer_banned'] = is_banned
-        review_data['profanity_analysis']['current_reviewer_profanity_count'] = current_profanity_count if contains_profanity else 0
+        # The profanity_review_count in the output payload reflects the count *after* a profane review.
+        # If the current review is clean, it will be 0 as no update occurred for this review.
+        review_data['profanity_analysis']['current_reviewer_profanity_review_count'] = current_profanity_review_count if contains_profanity else 0
 
         # Determine next bucket based on profanity status
-        if contains_profanity:
-            next_bucket = FLAGGED_BUCKET
-            next_key = f"flagged/{review_data.get('review_id', 'unknown')}.json"
-        else:
-            next_bucket = CLEAN_BUCKET
-            next_key = f"clean/{review_data.get('review_id', 'unknown')}.json"
-        
+        next_bucket = FLAGGED_BUCKET if contains_profanity else CLEAN_BUCKET
+        next_key = f"{'flagged' if contains_profanity else 'clean'}/{review_id}.json"
+
         # Save analyzed review to appropriate S3 bucket
-        s3_client.put_object(
-            Bucket=next_bucket,
-            Key=next_key,
-            Body=json.dumps(review_data, indent=2),
-            ContentType='application/json'
-        )
-        
-        logger.info(f"Profanity check completed. Review {'flagged' if contains_profanity else 'clean'} and saved to {next_bucket}/{next_key}")
-        
+        try:
+            s3_client.put_object(
+                Bucket=next_bucket,
+                Key=next_key,
+                Body=json.dumps(review_data, indent=2),
+                ContentType='application/json'
+            )
+        except Exception as s3_put_e:
+            logger.error(f"Error saving processed review to S3 ({next_bucket}/{next_key}): {s3_put_e}. Stack trace: {traceback.format_exc()}")
+            return {
+                'statusCode': 500,
+                'body': json.dumps({'error': 'Failed to save processed review to S3'})
+            }
+
+        logger.info(f"Profanity check completed. Review {'flagged' if contains_profanity else 'clean'} and saved to s3://{next_bucket}/{next_key}")
+
         return {
             'statusCode': 200,
             'body': json.dumps({
                 'message': 'Profanity check completed',
-                'review_id': review_data.get('review_id', 'unknown'),
-                'reviewer_id': review_data.get('reviewer_id', 'unknown'),
+                'review_id': review_id,
+                'reviewer_id': reviewer_id,
                 'contains_profanity': contains_profanity,
-                'profanity_count': total_profanity_count,
-                'severity_score': total_severity_score,
                 'reviewer_banned': is_banned,
+                'profanity_review_count': current_profanity_review_count if contains_profanity else 0,
                 'output_location': f"s3://{next_bucket}/{next_key}"
             })
         }
-        
+
     except Exception as e:
-        logger.error(f"Error during profanity check: {str(e)}")
+        logger.error(f"Unhandled error during profanity check: {str(e)}. Stack trace: {traceback.format_exc()}")
         return {
             'statusCode': 500,
             'body': json.dumps({
-                'error': 'Failed to perform profanity check',
+                'error': 'Unhandled exception during profanity check',
                 'details': str(e)
             })
         }

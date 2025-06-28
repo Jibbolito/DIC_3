@@ -1,0 +1,43 @@
+{
+  "s3_raw_bucket_count": 3154,
+  "s3_processed_bucket_count": 78829,
+  "s3_clean_bucket_count": 75876,
+  "s3_flagged_bucket_count": 2951,
+  "s3_final_reviews_bucket_count": 78827,
+  "dynamodb_profanity_table_count": 2898,
+  "total_reviews_processed_to_final": 78827,
+  "positive_reviews_final": 68444,
+  "neutral_reviews_final": 2344,
+  "negative_reviews_final": 8039,
+  "banned_users_count": 7,
+  "banned_users": [
+    {
+      "user_id": "A3LXRIY0HE71K",
+      "profanity_count": 3
+    },
+    {
+      "user_id": "AV6QDP8Q0ONK4",
+      "profanity_count": 3
+    },
+    {
+      "user_id": "A13QTZ8CIMHHG4",
+      "profanity_count": 3
+    },
+    {
+      "user_id": "A3UPYGJKZ0XTU4",
+      "profanity_count": 3
+    },
+    {
+      "user_id": "A320TMDV6KCFU",
+      "profanity_count": 5
+    },
+    {
+      "user_id": "A2E9HDZXQORZLA",
+      "profanity_count": 3
+    },
+    {
+      "user_id": "A1WAS4WOE1ZPAM",
+      "profanity_count": 3
+    }
+  ]
+}

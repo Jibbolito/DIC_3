@@ -19,13 +19,7 @@ MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
 
 if [ "$MAJOR" -lt "$REQUIRED_MAJOR" ] || ([ "$MAJOR" -eq "$REQUIRED_MAJOR" ] && [ "$MINOR" -lt "$REQUIRED_MINOR" ]); then
     echo "   Python $REQUIRED_MAJOR.$REQUIRED_MINOR+ required, found $PYTHON_VERSION"
-    echo "   Please install Python 3.11+ using pyenv or your preferred method:"
-    echo "   - Linux/macOS: https://github.com/pyenv/pyenv"
-    echo "   - Windows: https://pyenv-win.github.io/pyenv-win/"
-    echo ""
-    echo "   Quick pyenv setup:"
-    echo "   pyenv install 3.11.6"
-    echo "   pyenv local 3.11.6"
+    echo "   Please install Python 3.12+ using pyenv or your preferred method:"
     exit 1
 fi
 
@@ -37,19 +31,6 @@ if [[ "$VIRTUAL_ENV" != "" ]]; then
     echo "   Virtual environment active: $VIRTUAL_ENV"
 else
     echo "   No virtual environment detected"
-    echo "   It's recommended to create and activate a virtual environment:"
-    echo ""
-    echo "   python -m venv .venv"
-    echo ""
-    echo "   # Linux & macOS:"
-    echo "   source .venv/bin/activate"
-    echo ""
-    echo "   # Windows cmd:"
-    echo "   .venv\\Scripts\\activate.bat"
-    echo ""
-    echo "   # Windows PowerShell:"
-    echo "   .venv\\Scripts\\Activate.ps1"
-    echo ""
     read -p "Continue without virtual environment? (y/N): " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -66,9 +47,6 @@ if command -v jq &> /dev/null; then
 else
     echo "   jq is not installed"
     echo "   Please install jq: https://jqlang.org/download/"
-    echo "   - Ubuntu/Debian: sudo apt-get install jq"
-    echo "   - macOS: brew install jq"
-    echo "   - Windows: Download from https://jqlang.org/download/"
     exit 1
 fi
 
@@ -114,29 +92,7 @@ fi
 echo "   Installing Python dependencies..."
 pip install -r requirements.txt
 
-echo "   Installing regex additionally..."
-pip install -U regex
-
 echo "   Dependencies installed successfully"
-
-# Download nltk data for preprocessing if not already present
-if [ ! -d "src/lambda_functions/preprocessing/nltk_data" ]; then
-    echo "   Downloading NLTK data..."
-    python -m nltk.downloader -d ./src/lambda_functions/preprocessing/nltk_data punkt_tab punkt stopwords wordnet averaged_perceptron_tagger
-    echo "   NLTK data downloaded successfully"
-    echo "   Please remove non english data from it"
-else
-    echo "   NLTK data already present, skipping download"
-fi
-
-# Download nltk data for sentiment analysis if not already present
-if [ ! -d "src/lambda_functions/sentiment_analysis/nltk_data" ]; then
-    echo "   Downloading NLTK data for sentiment analysis..."
-    python -m nltk.downloader -d ./src/lambda_functions/sentiment_analysis/nltk_data vader_lexicon
-    echo "   NLTK data for sentiment analysis downloaded successfully"
-else
-    echo "   NLTK data for sentiment analysis already present, skipping download"
-fi
 
 # Test LocalStack installation
 echo "   Testing LocalStack installation..."
