@@ -16,6 +16,7 @@ awscli-local
 # Testing
 pytest
 moto
+requests
 
 # Utilities
 requests

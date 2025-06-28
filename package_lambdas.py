@@ -9,21 +9,17 @@ import tempfile
 import subprocess
 import sys
 
-# Constants
-PYTHON_VERSION = '3.12'  # Adjust as needed for your Lambda runtime
+PYTHON_VERSION = '3.12' 
 
 def package_lambda(function_name, function_dir):
     """Package a Lambda function with its dependencies"""
     print(f"  Packaging {function_name}...")
     
-    # Create temporary directory
     with tempfile.TemporaryDirectory() as temp_dir:
         # Copy function code
-        # Adjusted to match README.md: src/lambda_functions/<function_dir>/lambda_function.py
         function_path = os.path.join('src', 'lambda_functions', function_dir) 
         temp_function_path = os.path.join(temp_dir, 'function')
         
-        # Ensure the source directory exists
         if not os.path.exists(function_path):
             print(f"     Error: Source directory '{function_path}' not found for {function_name}.")
             return None
@@ -33,10 +29,10 @@ def package_lambda(function_name, function_dir):
         # Install dependencies if requirements.txt exists
         requirements_file = os.path.join(temp_function_path, 'requirements.txt')
         if os.path.exists(requirements_file):
-            print(f"     Installing dependencies for {function_name} (forcing source build for compatibility)...")
+            print(f"     Installing dependencies for {function_name} ...")
             subprocess.run([
                 sys.executable, '-m', 'pip', 'install',
-                '--platform', 'manylinux2014_x86_64',  # Adjust as needed
+                '--platform', 'manylinux2014_x86_64',
                 '-r', requirements_file,
                 '-t', temp_function_path,
                 '--quiet',

@@ -13,13 +13,10 @@ import logging
 import uuid
 
 
-# Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Initialize AWS clients
 s3_client = boto3.client('s3')
-
 
 
 def preprocess_text(text):
@@ -40,7 +37,7 @@ def preprocess_text(text):
             'word_count': 0
         }
     
-    # Convert to lowercase and remove special characters (except basic punctuation)
+    # Convert to lowercase and remove special characters, punctuation
     text = text.lower()
     text = re.sub(r'[^a-zA-Z0-9\s]', '', text)
     
@@ -55,7 +52,6 @@ def preprocess_text(text):
     lemmatizer = WordNetLemmatizer()
     lemmatized_tokens = [lemmatizer.lemmatize(word) for word in filtered_tokens]
     
-    # Join processed tokens back into text
     processed_text = ' '.join(lemmatized_tokens)
     
     return {
@@ -70,7 +66,7 @@ def process_single_review(review_data: dict, original_object_key: str) -> dict:
     Helper function to perform preprocessing on a single review dictionary.
     """
     processed_review = {
-        'review_id': review_data.get('asin', 'unknown') + review_data.get('reviewerID', 'unknown'), # 'asin' is often used as product ID, can be review ID
+        'review_id': review_data.get('asin', 'unknown') + review_data.get('reviewerID', 'unknown'),
         'reviewer_id': review_data.get('reviewerID', 'unknown'),
         'reviewer_name': review_data.get('reviewerName', ''),
         'overall_rating': review_data.get('overall', 0),
@@ -80,7 +76,7 @@ def process_single_review(review_data: dict, original_object_key: str) -> dict:
         'original_summary': review_data.get('summary', ''),
         'original_reviewText': review_data.get('reviewText', ''),
         'original_overall': str(review_data.get('overall', '')),
-        'original_object_key': original_object_key # Keep track of original source file
+        'original_object_key': original_object_key
     }
     
     # Preprocess summary field
@@ -116,7 +112,6 @@ def process_single_review(review_data: dict, original_object_key: str) -> dict:
         processed_review['overall_tokens'] = []
         processed_review['overall_word_count'] = 0
     
-    # Add processing metadata
     processed_review['processing_stage'] = 'preprocessed'
     processed_review['total_word_count'] = (
         processed_review['summary_word_count'] + 
@@ -136,7 +131,6 @@ def lambda_handler(event, context):
     Returns:
         dict: Response with status and processing details
     """
-    # Initialize counters
     processed_count = 0
     errors_count = 0
 
@@ -159,32 +153,24 @@ def lambda_handler(event, context):
         # Handle both single JSON and JSONL formats
         reviews_to_process = []
         try:
-            # Try parsing as single JSON first
             reviews_to_process.append(json.loads(file_content))
         except json.JSONDecodeError:
-            # If that fails, assume JSONL and process each line
             lines = file_content.strip().split('\n')
             for line in lines:
-                if line.strip(): # Ensure line is not empty
+                if line.strip():
                     try:
                         reviews_to_process.append(json.loads(line))
                     except json.JSONDecodeError as e:
                         logger.error(f"Skipping malformed JSON line in {object_key}: {line[:100]}... Error: {e}")
-                        errors_count += 1 # Increment errors_count for malformed lines
+                        errors_count += 1
                         continue
         
-        # Determine a base path for processed files to avoid collisions if multiple JSONL files
-        # are uploaded (e.g., reviews-batch1.jsonl, reviews-batch2.jsonl)
-        original_file_prefix = os.path.splitext(object_key)[0] # e.g., 'my_new_review' from 'my_new_review.json'
+        original_file_prefix = os.path.splitext(object_key)[0]
 
-        # Process each field that needs analysis
         for review_data in reviews_to_process:
             processed_review = process_single_review(review_data, object_key)
 
-            # Create a unique key for each processed review,
-            # using 'asin' or a generated UUID, and including the original file's context.
             review_id_for_key = processed_review.get('review_id') or str(uuid.uuid4())
-            # Changed key to include original file prefix for better organization and collision avoidance
             processed_key = f"processed/{original_file_prefix}/{review_id_for_key}.json" 
 
             s3_client.put_object(
@@ -201,7 +187,7 @@ def lambda_handler(event, context):
                 'body': json.dumps({
                     'message': f'{processed_count} review(s) successfully preprocessed and sent to {processed_bucket}',
                     'processed_count': processed_count,
-                    'errors_count': errors_count # Include errors_count in the response
+                    'errors_count': errors_count
                 })
             }
         
@@ -212,7 +198,7 @@ def lambda_handler(event, context):
             'body': json.dumps({
                 'error': 'Failed to preprocess reviews',
                 'details': str(e),
-                'processed_count': processed_count, # Return counts even on general error
+                'processed_count': processed_count,
                 'errors_count': errors_count
             })
         }

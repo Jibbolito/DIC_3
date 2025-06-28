@@ -1,7 +1,6 @@
 import boto3
 import json
 import os
-import uuid
 import time
 
 
@@ -15,6 +14,8 @@ def upload_reviews_to_s3(file_path, bucket_name, aws_endpoint_url=None, upload_d
         bucket_name (str): The name of the S3 bucket to upload to (e.g., 'clean-reviews-bucket').
         aws_endpoint_url (str, optional): The AWS endpoint URL for LocalStack.
                                           Defaults to None (uses default AWS endpoint).
+        upload_delay_seconds (float, optional): Delay in seconds between uploads to avoid throttling.
+                                               Defaults to 0.1 seconds.
     """
     s3_client = boto3.client('s3', endpoint_url=aws_endpoint_url)
 
@@ -36,7 +37,7 @@ def upload_reviews_to_s3(file_path, bucket_name, aws_endpoint_url=None, upload_d
                     failed_count += 1
                     continue
 
-                # When batch reaches 25pyth or it's the last line, upload
+                # When batch reaches 25 or it's the last line, upload
                 if len(batch) == 25:
                     object_key = f"clean/batch_{batch_start_line}_{line_num}.jsonl"
                     try:
@@ -87,21 +88,13 @@ def upload_reviews_to_s3(file_path, bucket_name, aws_endpoint_url=None, upload_d
 
 
 if __name__ == "__main__":
-    # Define your file path and S3 bucket name
     FILE_PATH = './data/reviews_devset.json'
     TARGET_BUCKET_NAME = 'raw-reviews-bucket' 
-
-    # --- Configuration for LocalStack ---
-    # If you are running LocalStack, uncomment the line below and ensure your LocalStack is running
-    # If you are using real AWS, keep it commented out.
     AWS_LOCALSTACK_ENDPOINT = 'http://localhost:4566'
-
     UPLOAD_DELAY_SECONDS = 2
 
-    # Ensure the 'data' directory exists
     os.makedirs(os.path.dirname(FILE_PATH), exist_ok=True)
 
-    # Call the function to start the upload
     upload_reviews_to_s3(FILE_PATH, TARGET_BUCKET_NAME, 
                          aws_endpoint_url=AWS_LOCALSTACK_ENDPOINT, 
                          upload_delay_seconds=UPLOAD_DELAY_SECONDS)

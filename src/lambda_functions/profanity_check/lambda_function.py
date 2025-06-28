@@ -2,24 +2,20 @@ import json
 import boto3
 import logging
 import os
-import traceback # Import traceback
-import uuid # Required for generating UUIDs if review_id is missing
+import traceback
+import uuid
 from typing import Dict, Any
 from profanityfilter import ProfanityFilter
 
-# Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Initialize AWS clients
 s3_client = boto3.client('s3')
-# Initialize DynamoDB client, use endpoint_url for LocalStack
 dynamodb = boto3.resource('dynamodb', endpoint_url=os.environ.get('AWS_ENDPOINT_URL'))
 ssm_client = boto3.client('ssm', endpoint_url=os.environ.get('AWS_ENDPOINT_URL'))
 
 pf = ProfanityFilter()
 
-# Configuration variables, initialized to None and loaded once
 FLAGGED_BUCKET = None
 CLEAN_BUCKET = None
 CUSTOMER_PROFANITY_TABLE_NAME = None
@@ -32,7 +28,6 @@ def load_config():
     global FLAGGED_BUCKET, CLEAN_BUCKET, CUSTOMER_PROFANITY_TABLE_NAME, BAN_THRESHOLD, customer_profanity_table, _config_loaded
     if _config_loaded:
         return
-
     try:
         FLAGGED_BUCKET = ssm_client.get_parameter(Name='/my-app/s3/flagged_bucket_name', WithDecryption=True)['Parameter']['Value']
         CLEAN_BUCKET = ssm_client.get_parameter(Name='/my-app/s3/clean_bucket_name', WithDecryption=True)['Parameter']['Value']
@@ -53,7 +48,7 @@ def load_config():
         _config_loaded = True
     except Exception as e:
         logger.critical(f"Failed to load SSM parameters at initialization: {e}. Lambda cannot proceed. Stack trace: {traceback.format_exc()}")
-        raise # Re-raise if critical configuration cannot be loaded
+        raise
 
 def check_profanity_in_text(text: str) -> Dict:
     """
@@ -126,7 +121,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'body': json.dumps({'error': 'Failed to retrieve or parse review data from S3'})
             }
 
-        # Validate reviewer_id and review_id early
         reviewer_id = review_data.get('reviewer_id')
         review_id = review_data.get('review_id')
 
@@ -138,9 +132,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             }
         if not review_id:
             logger.warning(f"Missing 'review_id' in review data for object {object_key}. Generating a UUID for S3 key.")
-            review_id = str(uuid.uuid4()) # Generating UUID for review_id if missing
+            review_id = str(uuid.uuid4())
 
-        # Perform profanity check on processed text fields
         summary_check = check_profanity_in_text(review_data.get('processed_summary', ''))
         reviewtext_check = check_profanity_in_text(review_data.get('processed_reviewText', ''))
         overall_check = check_profanity_in_text(review_data.get('processed_overall', ''))
@@ -162,13 +155,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             }
         })
 
-        # --- Profanity Review Count and Banning Logic ---
         is_banned = False
         current_profanity_review_count = 0
 
         if contains_profanity:
             try:
-                # Increment profanity review count in DynamoDB
+                # Update the profanity review count for the reviewer in DynamoDB
                 response = customer_profanity_table.update_item(
                     Key={'reviewer_id': reviewer_id},
                     UpdateExpression='SET profanity_review_count = if_not_exists(profanity_review_count, :start) + :inc',
@@ -181,8 +173,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 current_profanity_review_count = int(response['Attributes'].get('profanity_review_count', 0))
                 logger.info(f"Reviewer '{reviewer_id}' profanity review count updated to: {current_profanity_review_count}")
 
-                # Check for banning: Ban happens when the profanity review count is
-                # equal to or exceeds the BAN_THRESHOLD.
+                # Check if the reviewer should be banned
                 if current_profanity_review_count >= BAN_THRESHOLD:
                     customer_profanity_table.update_item(
                         Key={'reviewer_id': reviewer_id},
@@ -195,14 +186,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     logger.warning(f"Reviewer '{reviewer_id}' has been banned due to excessive profane reviews ({current_profanity_review_count}).")
             except dynamodb.meta.client.exceptions.ProvisionedThroughputExceededException as ddb_e:
                  logger.error(f"DynamoDB throughput exceeded for reviewer '{reviewer_id}': {str(ddb_e)}. Stack trace: {traceback.format_exc()}")
-                 # In a production scenario, consider implementing retry logic or sending to a DLQ here.
             except Exception as ddb_e:
                 logger.error(f"Unexpected error updating DynamoDB for reviewer '{reviewer_id}': {str(ddb_e)}. Stack trace: {traceback.format_exc()}")
-                # Decide if this should halt processing or just log. For now, continuing.
 
         review_data['profanity_analysis']['reviewer_banned'] = is_banned
-        # The profanity_review_count in the output payload reflects the count *after* a profane review.
-        # If the current review is clean, it will be 0 as no update occurred for this review.
         review_data['profanity_analysis']['current_reviewer_profanity_review_count'] = current_profanity_review_count if contains_profanity else 0
 
         # Determine next bucket based on profanity status

@@ -7,16 +7,13 @@ from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
 nltk.data.path.append(os.path.join(os.path.dirname(__file__), 'nltk_data'))
 
-# Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Initialize AWS clients
 s3_client = boto3.client('s3')
-dynamodb = boto3.resource('dynamodb', endpoint_url=os.environ.get('AWS_ENDPOINT_URL')) # Use endpoint_url for LocalStack
-ssm_client = boto3.client('ssm', endpoint_url=os.environ.get('AWS_ENDPOINT_URL')) # Use endpoint_url for LocalStack
+dynamodb = boto3.resource('dynamodb', endpoint_url=os.environ.get('AWS_ENDPOINT_URL'))
+ssm_client = boto3.client('ssm', endpoint_url=os.environ.get('AWS_ENDPOINT_URL'))
 
-# Initialize VADER sentiment analyzer
 analyzer = SentimentIntensityAnalyzer()
 
 def get_parameter(name):
@@ -33,7 +30,6 @@ try:
     FINAL_REVIEWS_BUCKET = get_parameter('/my-app/s3/final_reviews_bucket_name')
 except Exception as e:
     logger.error(f"Failed to load SSM parameters at initialization: {e}")
-    # Fallback or re-raise based on your error handling strategy
     FINAL_REVIEWS_BUCKET = 'final-reviews-bucket' # Fallback for local testing if SSM not setup
 
 def analyze_sentiment_in_text(text: str) -> dict:

@@ -166,7 +166,7 @@ def generate_review_report():
         print(f"Error accessing DynamoDB table '{CUSTOMER_PROFANITY_TABLE_NAME}': {e}")
 
     # --- Save the report to a JSON file ---
-    output_filename = "review_pipeline_report_batch.json"
+    output_filename = "assignment_results.json"
     with open(output_filename, 'w') as f:
         json.dump(report_data, f, indent=2)
 
