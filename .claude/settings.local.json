@@ -22,7 +22,11 @@
       "Bash(sudo apt install:*)",
       "Bash(docker logs:*)",
       "Bash(./setup_eventbridge.sh:*)",
-      "Bash(touch:*)"
+      "Bash(touch:*)",
+      "Bash(docker:*)",
+      "Bash(chmod:*)",
+      "Bash(./setup_aws_lambdas.sh:*)",
+      "Bash(apt:*)"
     ],
     "deny": []
   }
