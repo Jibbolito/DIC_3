@@ -94,12 +94,13 @@ python package_lambdas.py
 ### Run Unit/Integration Tests
 ```bash
 # Run all tests
-python run_tests.py
-
-# Test specific components
-python run_tests.py preprocessing    # Preprocessing function only
-python run_tests.py profanity_check  # Profanity check function only  
-python run_tests.py integration      # S3 integration only
+./setup_environment.sh
+pip install -r ./src/tests/requirements.txt
+python -m nltk.downloader corpora punkt punkt_tab vader_lexicon stopwords wordnet averaged_perceptron_tagger
+python ./src/tests/test_preprocessing.py
+python ./src/tests/test_profanity_check.py
+python ./src/tests/test_sentiment_analysis.py
+python ./src/tests/test_integration.py
 ```
 
 ### Run AWS LocalStack Pipeline Test
