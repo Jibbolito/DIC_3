@@ -1,0 +1,24 @@
+{
+  "s3_raw_bucket_count": 78829,
+  "s3_processed_bucket_count": 78829,
+  "s3_clean_bucket_count": 70292,
+  "s3_flagged_bucket_count": 4468,
+  "s3_final_reviews_bucket_count": 74507,
+  "dynamodb_profanity_table_count": 4438,
+  "total_reviews_processed_to_final": 74507,
+  "positive_reviews_final": 64629,
+  "neutral_reviews_final": 2227,
+  "negative_reviews_final": 7651,
+  "failed_profanity_check_flagged_bucket": 4468,
+  "banned_users_count": 2,
+  "banned_users": [
+    {
+      "user_id": "A320TMDV6KCFU",
+      "profanity_count": 5
+    },
+    {
+      "user_id": "A2F6N60Z96CAJI",
+      "profanity_count": 4
+    }
+  ]
+}

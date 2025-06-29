@@ -41,7 +41,7 @@ Thumbs.db
 
 # Deployment packages
 deployments/
-*.zip
+
 
 # LocalStack
 .localstack/
