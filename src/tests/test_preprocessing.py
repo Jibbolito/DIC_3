@@ -141,11 +141,9 @@ class TestLambdaHandler:
         # Verify response
         assert result['statusCode'] == 200
         body = json.loads(result['body'])
-        assert body['message'] == 'Review successfully preprocessed'
-        assert body['review_id'] == 'B001234567'
-        assert body['reviewer_id'] == 'A1234567890'
-        assert 'total_words' in body
-        assert 'output_location' in body
+        assert body['message'] == '1 review(s) successfully preprocessed and sent to test-processed-bucket'
+        assert 'processed_count' in body
+        assert body['errors_count'] == 0
         
         # Verify S3 calls
         mock_s3_client.get_object.assert_called_once()
@@ -154,7 +152,7 @@ class TestLambdaHandler:
         # Check put_object call arguments
         put_call_args = mock_s3_client.put_object.call_args
         assert put_call_args[1]['Bucket'] == 'test-processed-bucket'
-        assert put_call_args[1]['Key'] == 'processed/test-review.json'
+        assert put_call_args[1]['Key'] == 'processed/test-review/B001234567A1234567890.json'
         assert put_call_args[1]['ContentType'] == 'application/json'
     
     @patch('lambda_function.s3_client')
@@ -188,8 +186,7 @@ class TestLambdaHandler:
         # Should still succeed but with default values
         assert result['statusCode'] == 200
         body = json.loads(result['body'])
-        assert body['reviewer_id'] == 'unknown'  # Default value
-        assert body['total_words'] == 0  # No text to process
+        assert body['message'] == '1 review(s) successfully preprocessed and sent to test-processed-bucket'
     
     @patch('lambda_function.s3_client')
     def test_lambda_handler_s3_error(self, mock_s3_client):
@@ -213,7 +210,7 @@ class TestLambdaHandler:
         # Should return error response
         assert result['statusCode'] == 500
         body = json.loads(result['body'])
-        assert body['error'] == 'Failed to preprocess review'
+        assert body['error'] == 'Failed to preprocess reviews'
         assert 'S3 Error' in body['details']
     
     @patch('lambda_function.s3_client')
@@ -232,7 +229,7 @@ class TestLambdaHandler:
         }
         
         # JSONL format - single line
-        jsonl_content = json.dumps(mock_review_data)
+        jsonl_content = json.dumps(mock_review_data, indent=2) 
         
         mock_s3_client.get_object.return_value = {
             'Body': Mock(read=Mock(return_value=jsonl_content.encode('utf-8')))
@@ -256,7 +253,7 @@ class TestLambdaHandler:
         # Should succeed
         assert result['statusCode'] == 200
         body = json.loads(result['body'])
-        assert body['review_id'] == 'B001234567'
+        assert body['message'] == '1 review(s) successfully preprocessed and sent to test-processed-bucket'
     
     @patch('lambda_function.s3_client')
     def test_lambda_handler_invalid_json(self, mock_s3_client):
@@ -282,7 +279,7 @@ class TestLambdaHandler:
         # Should return error response
         assert result['statusCode'] == 500
         body = json.loads(result['body'])
-        assert body['error'] == 'Failed to preprocess review'
+        assert body['error'] == 'Failed to preprocess reviews'
 
 
 if __name__ == '__main__':

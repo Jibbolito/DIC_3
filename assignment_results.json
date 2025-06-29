@@ -5,7 +5,6 @@
   "s3_flagged_bucket_count": 2951,
   "s3_final_reviews_bucket_count": 78827,
   "dynamodb_profanity_table_count": 2898,
-  "total_reviews_processed_to_final": 78827,
   "positive_reviews_final": 68444,
   "neutral_reviews_final": 2344,
   "negative_reviews_final": 8039,

@@ -118,3 +118,10 @@ After the end of execution seen in localstack logs we can generate the report - 
 # Generate the report based on the reviews in buckets and DynamoDB Table
 python ./generate_report.py
 ```
+
+### Stop execution
+
+```bash
+# Clean up 
+localstack stop
+```

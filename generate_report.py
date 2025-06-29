@@ -53,7 +53,6 @@ def generate_review_report():
         "s3_flagged_bucket_count": 0,
         "s3_final_reviews_bucket_count": 0,
         "dynamodb_profanity_table_count": 0,
-        "total_reviews_processed_to_final": 0, # Reviews that made it to the final S3 bucket
         "positive_reviews_final": 0,
         "neutral_reviews_final": 0,
         "negative_reviews_final": 0,
@@ -126,9 +125,7 @@ def generate_review_report():
                         print(f"Warning: Could not decode JSON for {obj['Key']} in {FINAL_REVIEWS_BUCKET}. Skipping detailed sentiment analysis for this file.")
                     except Exception as e:
                         print(f"Warning: Error processing {obj['Key']} in {FINAL_REVIEWS_BUCKET}: {e}")
-        # The total count for final reviews bucket is already in s3_final_reviews_bucket_count
-        report_data["total_reviews_processed_to_final"] = report_data["s3_final_reviews_bucket_count"]
-        print(f"Detailed sentiment analysis completed for {report_data['total_reviews_processed_to_final']} reviews from '{FINAL_REVIEWS_BUCKET}'")
+
     except Exception as e:
         print(f"Error accessing '{FINAL_REVIEWS_BUCKET}' for detailed sentiment analysis: {e}")
 

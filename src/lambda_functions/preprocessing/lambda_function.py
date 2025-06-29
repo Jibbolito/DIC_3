@@ -181,6 +181,9 @@ def lambda_handler(event, context):
             )
             logger.info(f"Successfully processed review '{review_id_for_key}' and saved to {processed_bucket}/{processed_key}")
             processed_count += 1
+        if errors_count > 0:
+            logger.warning(f"Processed {processed_count} reviews with {errors_count} errors.")
+            raise Exception(f"Processed {processed_count} reviews with {errors_count} errors.")
         
         return {
                 'statusCode': 200,
