@@ -1,27 +1,27 @@
 import pytest
 import json
-from unittest.mock import Mock, patch, create_autospec # Import create_autospec
+from unittest.mock import Mock, patch, create_autospec 
 import sys
 import os
 
-# Add the lambda function directory to the path
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '../lambda_functions/profanity_check'))
 
 from lambda_function import check_profanity_in_text, lambda_handler
 
-# ... (TestCheckProfanityInText class remains the same) ...
+
 
 class TestLambdaHandler:
     """Unit tests for the lambda_handler function"""
     
-    # ... (previous test methods) ...
+    
 
     @patch('lambda_function.s3_client')
-    @patch('lambda_function.ssm_client') # Patch ssm_client
-    @patch('lambda_function.dynamodb')   # Patch dynamodb resource
+    @patch('lambda_function.ssm_client') 
+    @patch('lambda_function.dynamodb')   
     def test_lambda_handler_clean_review(self, mock_dynamodb, mock_ssm_client, mock_s3_client):
         """Test lambda execution with clean review"""
-        # Configure mock SSM client to return config values
+        
         mock_ssm_client.get_parameter.side_effect = [
             {'Parameter': {'Value': 'flagged-reviews-bucket'}},
             {'Parameter': {'Value': 'clean-reviews-bucket'}},
@@ -29,11 +29,11 @@ class TestLambdaHandler:
             {'Parameter': {'Value': '3'}}
         ]
 
-        # Configure mock DynamoDB table
+        
         mock_table = Mock()
         mock_dynamodb.Table.return_value = mock_table
         
-        # Mock processed review data (output from preprocessing)
+        
         mock_review_data = {
             'review_id': 'B001234567',
             'reviewer_id': 'A1234567890',
@@ -49,9 +49,9 @@ class TestLambdaHandler:
         }
         mock_s3_client.put_object.return_value = {}
 
-        # MOCK s3_client.exceptions.NoSuchKey here
+        
         mock_s3_client.exceptions = Mock()
-        mock_s3_client.exceptions.NoSuchKey = type('NoSuchKey', (Exception,), {}) # Create a mock exception class
+        mock_s3_client.exceptions.NoSuchKey = type('NoSuchKey', (Exception,), {}) 
         
         event = {
             'Records': [
@@ -64,27 +64,27 @@ class TestLambdaHandler:
             ]
         }
         
-        # Ensure _config_loaded is reset for each test if it's a global variable
-        # This might be important if multiple lambda_handler tests are run
+        
+        
         with patch('lambda_function._config_loaded', False):
             result = lambda_handler(event, {})
         
-        # Verify response
-        assert result['statusCode'] == 200 # Now it should pass this too
+        
+        assert result['statusCode'] == 200 
         body = json.loads(result['body'])
         print(body)
         assert body['message'] == 'Profanity check completed'
         assert body['contains_profanity'] is False
-        assert body['profanity_review_count'] == 0 # Corrected key
-        assert 'clean-reviews-bucket' in body['output_location'] # This relies on the mock SSM values
+        assert body['profanity_review_count'] == 0 
+        assert 'clean-reviews-bucket' in body['output_location'] 
         
-        # Verify S3 calls
+        
         mock_s3_client.get_object.assert_called_once()
         mock_s3_client.put_object.assert_called_once()
         
-        # Check put_object call goes to clean bucket
+        
         put_call_args = mock_s3_client.put_object.call_args
-        assert put_call_args[1]['Bucket'] == 'clean-reviews-bucket' # Check against mocked SSM value
+        assert put_call_args[1]['Bucket'] == 'clean-reviews-bucket' 
         assert 'clean/' in put_call_args[1]['Key']
 
     @patch('lambda_function.s3_client')
@@ -117,7 +117,7 @@ class TestLambdaHandler:
         }
         mock_s3_client.put_object.return_value = {}
 
-        # MOCK s3_client.exceptions.NoSuchKey here
+        
         mock_s3_client.exceptions = Mock()
         mock_s3_client.exceptions.NoSuchKey = type('NoSuchKey', (Exception,), {})
         
@@ -139,7 +139,7 @@ class TestLambdaHandler:
         body = json.loads(result['body'])
         assert body['message'] == 'Profanity check completed'
         assert body['contains_profanity'] is True
-        assert body['profanity_review_count'] > 0 # Corrected key
+        assert body['profanity_review_count'] > 0 
         assert 'flagged-reviews-bucket' in body['output_location']
         
         put_call_args = mock_s3_client.put_object.call_args
@@ -172,7 +172,7 @@ class TestLambdaHandler:
         }
         mock_s3_client.put_object.return_value = {}
 
-        # MOCK s3_client.exceptions.NoSuchKey here
+        
         mock_s3_client.exceptions = Mock()
         mock_s3_client.exceptions.NoSuchKey = type('NoSuchKey', (Exception,), {})
         
@@ -193,7 +193,7 @@ class TestLambdaHandler:
         assert result['statusCode'] == 200
         body = json.loads(result['body'])
         assert body['contains_profanity'] is False
-        assert body['profanity_review_count'] == 0 # Corrected key
+        assert body['profanity_review_count'] == 0 
         mock_table.update_item.assert_not_called()
     
     @patch('lambda_function.s3_client')
@@ -210,9 +210,9 @@ class TestLambdaHandler:
         mock_table = Mock()
         mock_dynamodb.Table.return_value = mock_table
 
-        # Mock S3 error during get_object
-        # Make sure the exception is an instance of a real Exception class
-        # And also mock NoSuchKey for completeness
+        
+        
+        
         mock_s3_client.exceptions = Mock()
         mock_s3_client.exceptions.NoSuchKey = type('NoSuchKey', (Exception,), {})
         mock_s3_client.get_object.side_effect = Exception("S3 Error")
@@ -231,12 +231,12 @@ class TestLambdaHandler:
         with patch('lambda_function._config_loaded', False):
             result = lambda_handler(event, {})
         
-        # Should return error response
+        
         assert result['statusCode'] == 500
         body = json.loads(result['body'])
         assert body['error'] == 'Failed to retrieve or parse review data from S3'
         
-        # Ensure no DynamoDB or S3 put_object calls
+        
         mock_table.update_item.assert_not_called()
         mock_s3_client.put_object.assert_not_called()
     
@@ -267,11 +267,11 @@ class TestLambdaHandler:
             'Body': Mock(read=Mock(return_value=json.dumps(mock_review_data).encode('utf-8')))
         }
         
-        # MOCK s3_client.exceptions.NoSuchKey here
+        
         mock_s3_client.exceptions = Mock()
         mock_s3_client.exceptions.NoSuchKey = type('NoSuchKey', (Exception,), {})
 
-        # Capture the data sent to S3
+        
         captured_data = {}
         def capture_put_object(**kwargs):
             captured_data.update(kwargs)

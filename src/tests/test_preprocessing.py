@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch, MagicMock
 import sys
 import os
 
-# Add the lambda function directory to the path
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '../lambda_functions/preprocessing'))
 
 from lambda_function import preprocess_text, lambda_handler
@@ -24,11 +24,11 @@ class TestPreprocessText:
         assert 'processed_text' in result
         assert 'word_count' in result
         
-        # Check that stopwords are removed
-        assert 'is' not in result['tokens']  # 'is' is a stopword
-        assert 'a' not in result['tokens']   # 'a' is a stopword
         
-        # Check that meaningful words are kept
+        assert 'is' not in result['tokens']  
+        assert 'a' not in result['tokens']   
+        
+        
         assert 'great' in result['tokens']
         assert 'product' in result['tokens']
         assert 'love' in result['tokens']
@@ -56,11 +56,11 @@ class TestPreprocessText:
         text = "Amazing product!!! Best purchase ever. 5/5 stars ⭐⭐⭐⭐⭐"
         result = preprocess_text(text)
         
-        # Special characters should be removed
+        
         assert '⭐' not in result['processed_text']
         assert '!!!' not in result['processed_text']
         
-        # Meaningful words should remain
+        
         assert 'amazing' in result['tokens']
         assert 'product' in result['tokens']
         assert 'best' in result['tokens']
@@ -71,12 +71,11 @@ class TestPreprocessText:
         text = "The products were amazing and the services are excellent"
         result = preprocess_text(text)
         
-        # Lemmatization should convert plurals to singular
-        # Note: NLTK lemmatizer may not catch all cases perfectly
-        tokens = result['tokens']
-        processed_text = result['processed_text']
         
-        # Check that some form of normalization occurred
+        
+        tokens = result['tokens']
+        
+        
         assert len(tokens) > 0
         assert result['word_count'] > 0
     
@@ -85,10 +84,10 @@ class TestPreprocessText:
         text = "EXCELLENT Product with GREAT Quality"
         result = preprocess_text(text)
         
-        # Original text should be lowercased
+        
         assert result['original_text'].islower()
         
-        # Tokens should contain lowercase words
+        
         assert 'excellent' in result['tokens']
         assert 'product' in result['tokens']
         assert 'great' in result['tokens']
@@ -101,7 +100,7 @@ class TestLambdaHandler:
     @patch('lambda_function.s3_client')
     def test_lambda_handler_success(self, mock_s3_client):
         """Test successful lambda execution"""
-        # Mock S3 response - using real dataset format
+        
         mock_review_data = {
             'asin': 'B001234567',
             'reviewerID': 'A1234567890',
@@ -119,10 +118,10 @@ class TestLambdaHandler:
             'Body': Mock(read=Mock(return_value=json.dumps(mock_review_data).encode('utf-8')))
         }
         
-        # Mock the put_object call
+        
         mock_s3_client.put_object.return_value = {}
         
-        # Create test event
+        
         event = {
             'Records': [
                 {
@@ -134,22 +133,22 @@ class TestLambdaHandler:
             ]
         }
         
-        # Set environment variable
+        
         with patch.dict(os.environ, {'PROCESSED_BUCKET': 'test-processed-bucket'}):
             result = lambda_handler(event, {})
         
-        # Verify response
+        
         assert result['statusCode'] == 200
         body = json.loads(result['body'])
         assert body['message'] == '1 review(s) successfully preprocessed and sent to test-processed-bucket'
         assert 'processed_count' in body
         assert body['errors_count'] == 0
         
-        # Verify S3 calls
+        
         mock_s3_client.get_object.assert_called_once()
         mock_s3_client.put_object.assert_called_once()
         
-        # Check put_object call arguments
+        
         put_call_args = mock_s3_client.put_object.call_args
         assert put_call_args[1]['Bucket'] == 'test-processed-bucket'
         assert put_call_args[1]['Key'] == 'processed/test-review/B001234567A1234567890.json'
@@ -158,10 +157,10 @@ class TestLambdaHandler:
     @patch('lambda_function.s3_client')
     def test_lambda_handler_missing_fields(self, mock_s3_client):
         """Test lambda execution with missing review fields"""
-        # Mock S3 response with minimal data
+        
         mock_review_data = {
             'asin': 'B001234567'
-            # Missing other fields
+            
         }
         
         mock_s3_client.get_object.return_value = {
@@ -183,7 +182,7 @@ class TestLambdaHandler:
         with patch.dict(os.environ, {'PROCESSED_BUCKET': 'test-processed-bucket'}):
             result = lambda_handler(event, {})
         
-        # Should still succeed but with default values
+        
         assert result['statusCode'] == 200
         body = json.loads(result['body'])
         assert body['message'] == '1 review(s) successfully preprocessed and sent to test-processed-bucket'
@@ -191,7 +190,7 @@ class TestLambdaHandler:
     @patch('lambda_function.s3_client')
     def test_lambda_handler_s3_error(self, mock_s3_client):
         """Test lambda execution with S3 error"""
-        # Mock S3 error
+        
         mock_s3_client.get_object.side_effect = Exception("S3 Error")
         
         event = {
@@ -207,7 +206,7 @@ class TestLambdaHandler:
         
         result = lambda_handler(event, {})
         
-        # Should return error response
+        
         assert result['statusCode'] == 500
         body = json.loads(result['body'])
         assert body['error'] == 'Failed to preprocess reviews'
@@ -216,7 +215,7 @@ class TestLambdaHandler:
     @patch('lambda_function.s3_client')
     def test_lambda_handler_jsonl_format(self, mock_s3_client):
         """Test lambda execution with JSONL format (like reviews_devset.json)"""
-        # Mock S3 response with JSONL format
+        
         mock_review_data = {
             'asin': 'B001234567',
             'reviewerID': 'A1234567890',
@@ -228,7 +227,7 @@ class TestLambdaHandler:
             'category': 'Patio_Lawn_and_Garden'
         }
         
-        # JSONL format - single line
+        
         jsonl_content = json.dumps(mock_review_data, indent=2) 
         
         mock_s3_client.get_object.return_value = {
@@ -250,7 +249,7 @@ class TestLambdaHandler:
         with patch.dict(os.environ, {'PROCESSED_BUCKET': 'test-processed-bucket'}):
             result = lambda_handler(event, {})
         
-        # Should succeed
+        
         assert result['statusCode'] == 200
         body = json.loads(result['body'])
         assert body['message'] == '1 review(s) successfully preprocessed and sent to test-processed-bucket'
@@ -258,7 +257,7 @@ class TestLambdaHandler:
     @patch('lambda_function.s3_client')
     def test_lambda_handler_invalid_json(self, mock_s3_client):
         """Test lambda execution with invalid JSON"""
-        # Mock S3 response with invalid JSON
+        
         mock_s3_client.get_object.return_value = {
             'Body': Mock(read=Mock(return_value=b'invalid json'))
         }
@@ -276,7 +275,7 @@ class TestLambdaHandler:
         
         result = lambda_handler(event, {})
         
-        # Should return error response
+        
         assert result['statusCode'] == 500
         body = json.loads(result['body'])
         assert body['error'] == 'Failed to preprocess reviews'
