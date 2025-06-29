@@ -105,6 +105,13 @@ python run_tests.py integration      # S3 integration only
 ### Run AWS LocalStack Pipeline Test
 ```bash
 # Test complete pipeline with real dataset
+# needs setting up proper AWS credentials
+
+export AWS_ACCESS_KEY_ID=test
+export AWS_SECRET_ACCESS_KEY=test
+export AWS_DEFAULT_REGION="us-east-1"
+export AWS_ENDPOINT_URL="http://localhost:4566"
+
 python ./upload_reviews.py
 
 # to check the logs from localstack:

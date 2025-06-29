@@ -15,7 +15,7 @@ R="==================================================="
 echo ""
 
 # Check if LocalStack is running before proceeding
-echo "📡 Checking LocalStack status..."
+echo "   Checking LocalStack status..."
 if ! curl -s http://localhost:4566/_localstack/health > /dev/null; then
     echo "   ERROR: LocalStack is not running. Please run ./setup_environment.sh first."
     exit 1
